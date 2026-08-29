@@ -21,7 +21,6 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.core.content.ContextCompat;
 
 import com.fmorea.syncthing.R;
-import com.fmorea.syncthing.activities.SyncthingActivity;
 import com.fmorea.syncthing.databinding.ActivityChessBinding;
 import com.fmorea.syncthing.model.Device;
 import com.fmorea.syncthing.util.ConfigRouter;
@@ -31,7 +30,7 @@ import java.io.File;
 import java.util.List;
 import java.util.Locale;
 
-public class ChessActivity extends SyncthingActivity implements ChessGameController.GameUI, SensorEventListener {
+public class ChessActivity extends com.fmorea.syncthing.activities.SyncthingActivity implements ChessGameController.GameUI, SensorEventListener {
 
     private static final String TAG = "ChessActivity";
     private ActivityChessBinding binding;

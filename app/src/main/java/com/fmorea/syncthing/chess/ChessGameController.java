@@ -6,7 +6,7 @@ import java.util.ArrayList;
  * ChessGameController coordinates the interaction between the Model, the Network, and the UI.
  * Modified to use global board state synchronization via Syncthing.
  */
-public class ChessGameController implements NetworkHandler.NetworkListener, ChessDelegate {
+public class ChessGameController implements NetworkHandler.NetworkListener, com.fmorea.syncthing.chess.ChessDelegate {
     private final ChessModel model;
     private final NetworkHandler transport;
     private final GameUI ui;
