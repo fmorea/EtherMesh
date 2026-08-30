@@ -17,7 +17,6 @@ import com.fmorea.syncthing.service.EventProcessor;
 import com.fmorea.syncthing.service.RestApi;
 import com.fmorea.syncthing.service.SyncthingRunnable;
 import com.fmorea.syncthing.service.SyncthingService;
-import com.fmorea.syncthing.settings.SettingsActivity;
 
 import javax.inject.Singleton;
 
@@ -38,7 +37,6 @@ public interface DaggerComponent {
     void inject(RestApi restApi);
     void inject(RecentChangesActivity recentChangesActivity);
     void inject(RunConditionMonitor runConditionMonitor);
-    void inject(SettingsActivity settingsActivity);
     void inject(ShareActivity activity);
     void inject(StatusFragment fragment);
     void inject(SyncConditionsActivity activity);

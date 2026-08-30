@@ -20,11 +20,14 @@ public class PreferenceMigration {
 
             if (key.equals(Constants.PREF_APP_THEME) && value instanceof Integer) {
                 int oldVal = (Integer) value;
-                String newVal = switch (oldVal) {
-                    case AppCompatDelegate.MODE_NIGHT_NO -> "light";
-                    case AppCompatDelegate.MODE_NIGHT_YES -> "dark";
-                    default -> "system";
-                };
+                String newVal;
+                if (oldVal == AppCompatDelegate.MODE_NIGHT_NO) {
+                    newVal = "light";
+                } else if (oldVal == AppCompatDelegate.MODE_NIGHT_YES) {
+                    newVal = "dark";
+                } else {
+                    newVal = "system";
+                }
                 editor.putString(key, newVal);
                 Log.d(TAG, "Migrated " + key + " from " + oldVal + " to " + newVal);
             } else if (key.equals(Constants.PREF_POWER_SOURCE) && value instanceof Integer) {

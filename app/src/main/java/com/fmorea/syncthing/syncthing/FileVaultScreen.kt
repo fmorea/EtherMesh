@@ -423,7 +423,6 @@ fun FileVaultScreen(
                     syncStatus = viewModel.syncStatus.collectAsState().value,
                     onSyncClick = { viewModel.forceSync() },
                     onShowId = { viewModel.showMyId() },
-                    onOpenSettings = { viewModel.openSettings() },
                     onOpenWebGui = { viewModel.openWebGui() },
                     onOpenChess = {
                         val gameFile = viewModel.shareChessGame()
@@ -1094,7 +1093,6 @@ fun FileVaultTopBar(
     syncStatus: String = "",
     onSyncClick: () -> Unit = {},
     onShowId: () -> Unit = {},
-    onOpenSettings: () -> Unit = {},
     onOpenWebGui: () -> Unit = {},
     onOpenChess: () -> Unit = {}
 ) {
@@ -1331,14 +1329,6 @@ fun FileVaultTopBar(
                                     onShowId()
                                 },
                                 leadingIcon = { Icon(Icons.Default.QrCode, null) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Impostazioni App") },
-                                onClick = {
-                                    showMenu = false
-                                    onOpenSettings()
-                                },
-                                leadingIcon = { Icon(Icons.Default.Settings, null) }
                             )
                             DropdownMenuItem(
                                 text = { Text("Console Avanzata (Web)") },

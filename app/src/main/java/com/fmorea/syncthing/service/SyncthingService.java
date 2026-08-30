@@ -238,7 +238,7 @@ public class SyncthingService extends Service {
         ENABLE_VERBOSE_LOG = AppPrefs.getPrefVerboseLog(mPreferences);
         LogV("onCreate");
         mConfigRouter = new ConfigRouter(SyncthingService.this);
-        mHandler = new Handler();
+        mHandler = new Handler(Looper.getMainLooper());
 
         /**
          * If runtime permissions are revoked, android kills and restarts the service.

@@ -3,7 +3,6 @@ package com.fmorea.syncthing.service;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.os.Build;
-import android.text.TextUtils;
 
 import java.io.File;
 import java.util.concurrent.TimeUnit;
@@ -133,9 +132,7 @@ public class Constants {
     public static final String LINKTHING_DIR_NAME = "EtherMesh";
     public static final String LINKTHING_OUTBOX_NAME = "outbox";
     public static final String LINKTHING_MSG_EXT = ".msg";
-    public static final String[] LINKTHING_BOOTSTRAP_IDS = {
-        "ZQ6DSBG-WRV2N2R-STIFQM3-QSO7XW7-SD2S6NN-DOPSFQG-S5R7QQF-5CCCFAA"
-    };
+    public static final String[] LINKTHING_BOOTSTRAP_IDS = {};
 
     public static boolean isBootstrapId(String deviceId) {
         if (deviceId == null) return false;
@@ -291,17 +288,17 @@ public class Constants {
      * Checks if the app is running on an Android emulator (AVD).
      */
     public static Boolean isRunningOnEmulator() {
-        return !TextUtils.isEmpty(Build.MANUFACTURER) &&
-                !TextUtils.isEmpty(Build.MODEL) &&
-                        (
-                            Build.MANUFACTURER.equals("Google") ||
-                            Build.MANUFACTURER.equals("unknown")
-                        ) && (
-                                Build.MODEL.equals("Android SDK built for x86") ||
-                                Build.MODEL.equals("Android SDK built for x86_64") ||
-                                Build.MODEL.equals("sdk_gphone_x86_arm"
-                        )
-                );
+        return Build.FINGERPRINT.startsWith("generic")
+                || Build.FINGERPRINT.startsWith("unknown")
+                || Build.MODEL.contains("google_sdk")
+                || Build.MODEL.contains("Emulator")
+                || Build.MODEL.contains("Android SDK built for x86")
+                || Build.MANUFACTURER.contains("Genymotion")
+                || (Build.BRAND.startsWith("generic") && Build.DEVICE.startsWith("generic"))
+                || "google_sdk".equals(Build.PRODUCT)
+                || Build.PRODUCT.contains("vbox86p")
+                || Build.PRODUCT.contains("emulator")
+                || Build.PRODUCT.contains("simulator");
     }
 
     public static Boolean isDebuggable(Context context) {

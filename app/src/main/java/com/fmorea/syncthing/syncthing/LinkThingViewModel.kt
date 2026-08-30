@@ -126,7 +126,6 @@ class LinkThingViewModel(application: Application) : AndroidViewModel(applicatio
         object ScanQrCode : UiEvent()
         object ManageFriends : UiEvent()
         object OpenWebGui : UiEvent()
-        object OpenSettings : UiEvent()
         object OpenChess : UiEvent()
         object EditProfile : UiEvent()
         data class DeviceDiscovered(val deviceId: String) : UiEvent()
@@ -171,7 +170,6 @@ class LinkThingViewModel(application: Application) : AndroidViewModel(applicatio
     fun scanQrCode() { _uiEvents.value = UiEvent.ScanQrCode }
     fun manageFriends() { _uiEvents.value = UiEvent.ManageFriends }
     fun openWebGui() { _uiEvents.value = UiEvent.OpenWebGui }
-    fun openSettings() { _uiEvents.value = UiEvent.OpenSettings }
     fun openChess() { _uiEvents.value = UiEvent.OpenChess }
     fun editProfile() { _uiEvents.value = UiEvent.EditProfile }
 
@@ -505,7 +503,7 @@ class LinkThingViewModel(application: Application) : AndroidViewModel(applicatio
 
     private var lastApiInstance: RestApi? = null
 
-    fun updateSyncStatus(state: SyncthingService.State, completion: Int, api: RestApi?) {
+    fun updateSyncStatus(state: SyncthingService.State, completion: Int, api: RestApi?, explanation: String = "") {
         this.restApi = api
         if (state == SyncthingService.State.ACTIVE && api != null && api.isConfigLoaded()) {
             if (lastApiInstance != api) {
@@ -527,7 +525,12 @@ class LinkThingViewModel(application: Application) : AndroidViewModel(applicatio
             SyncthingService.State.STARTING -> "Avvio di Syncthing..."
             SyncthingService.State.INIT -> "Inizializzazione..."
             SyncthingService.State.ERROR -> "Errore di sistema"
-            SyncthingService.State.DISABLED -> "Servizio Disattivato"
+            SyncthingService.State.DISABLED -> {
+                if (explanation.isNotBlank()) {
+                    val reasonLabel = getApplication<Application>().getString(com.fmorea.syncthing.R.string.reason)
+                    "$reasonLabel ${explanation.trim().replace("\n", " ")}"
+                } else "Servizio Disattivato"
+            }
             else -> "Offline"
         }
     }

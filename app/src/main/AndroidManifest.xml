@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
-    package="com.fmorea.syncthing">
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -24,23 +23,23 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
         android:usesPermissionFlags="neverForLocation"
-        tools:targetApi="s" />
+        tools:targetApi="33" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.NFC" />
 
     <application
         android:allowBackup="false"
-        android:fullBackupContent="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/ApplicationTheme"
-        android:name=".SyncthingApp"
+        android:name="com.fmorea.syncthing.SyncthingApp"
         android:extractNativeLibs="true"
-        android:networkSecurityConfig="@xml/network_security_config">
+        android:networkSecurityConfig="@xml/network_security_config"
+        tools:replace="android:allowBackup,android:icon,android:theme,android:label">
 
         <activity
-                android:name=".activities.MainActivity"
+                android:name="com.fmorea.syncthing.activities.MainActivity"
                 android:exported="true"
                 android:label="@string/app_name">
             <intent-filter>
@@ -49,23 +48,44 @@
             </intent-filter>
         </activity>
 
-        <activity android:name=".syncthing.NetworkManagementActivity" android:label="Network Management" />
-        <activity android:name=".chess.ChessActivity"
+        <activity android:name="com.fmorea.syncthing.syncthing.NetworkManagementActivity" android:label="Network Management" android:exported="false" />
+        <activity android:name="com.fmorea.syncthing.chess.ChessActivity"
             android:label="Chess"
-            android:theme="@style/Theme.Chess" />
-        <activity android:name=".activities.DeviceActivity" />
-        <activity android:name=".activities.FolderActivity" />
-        <activity android:name=".activities.LogActivity" />
-        <activity android:name=".settings.SettingsActivity" />
-        <activity android:name=".webgui.WebGuiActivity" />
-        <activity android:name=".onboarding.OnboardingActivity" />
-        <activity android:name=".activities.QRScannerActivity"
+            android:theme="@style/Theme.Chess"
+            android:exported="false" />
+        <activity android:name="com.fmorea.syncthing.activities.DeviceActivity" android:exported="false" />
+        <activity android:name="com.fmorea.syncthing.activities.FolderActivity" android:exported="false" />
+        <activity android:name="com.fmorea.syncthing.activities.LogActivity" android:exported="false" />
+        <activity android:name="com.fmorea.syncthing.activities.PhotoShootActivity" android:exported="false" />
+        <activity android:name="com.fmorea.syncthing.activities.RecentChangesActivity" android:exported="false" />
+        <activity android:name="com.fmorea.syncthing.activities.SyncConditionsActivity" android:exported="false" />
+        <activity android:name="com.fmorea.syncthing.activities.ShareActivity"
+            android:label="@string/share_activity_title"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:windowSoftInputMode="adjustResize"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
+        <activity android:name="com.fmorea.syncthing.webgui.WebGuiActivity" android:exported="false" />
+        <activity android:name="com.fmorea.syncthing.onboarding.OnboardingActivity" android:exported="false" />
+        <activity android:name="com.fmorea.syncthing.activities.QRScannerActivity"
             android:screenOrientation="portrait"
             android:stateNotNeeded="true"
-            android:windowSoftInputMode="stateAlwaysHidden" />
+            android:windowSoftInputMode="stateAlwaysHidden"
+            android:exported="false" />
 
         <service
-            android:name=".service.SyncthingService"
+            android:name="com.fmorea.syncthing.service.SyncthingService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
@@ -74,7 +94,7 @@
             android:permission="android.permission.BIND_JOB_SERVICE"
             android:exported="false" />
 
-        <receiver android:name=".receiver.BootReceiver"
+        <receiver android:name="com.fmorea.syncthing.receiver.BootReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
@@ -82,7 +102,7 @@
             </intent-filter>
         </receiver>
 
-        <receiver android:name=".receiver.AppConfigReceiver"
+        <receiver android:name="com.fmorea.syncthing.receiver.AppConfigReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="com.fmorea.syncthing.action.START" />
@@ -95,7 +115,8 @@
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.provider"
             android:exported="false"
-            android:grantUriPermissions="true">
+            android:grantUriPermissions="true"
+            tools:replace="android:authorities">
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />

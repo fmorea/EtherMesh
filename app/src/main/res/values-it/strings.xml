@@ -376,4 +376,5 @@
   <string name="error_decryption_failed">[Errore decrittazione]</string>
   <string name="label_private_message">[Messaggio privato]</string>
   <string name="label_missing_public_key">[Chiave pubblica mancante]</string>
+  <string name="global_chat">Chat globale</string>
 </resources>

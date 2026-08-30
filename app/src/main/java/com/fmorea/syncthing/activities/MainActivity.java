@@ -85,7 +85,8 @@ public class MainActivity extends SyncthingActivity implements SyncthingService.
         if (mLinkThingViewModel != null) {
             RestApi api = getApi();
             int completion = (api != null && api.isConfigLoaded()) ? api.getTotalSyncCompletion() : 100;
-            mLinkThingViewModel.updateSyncStatus(currentState, completion, api);
+            String explanation = (getService() != null) ? getService().getRunDecisionExplanation() : "";
+            mLinkThingViewModel.updateSyncStatus(currentState, completion, api, explanation);
         }
 
         if (currentState == SyncthingService.State.ACTIVE) {
@@ -105,7 +106,12 @@ public class MainActivity extends SyncthingActivity implements SyncthingService.
     private long getFirstStartTime() {
         PackageManager pm = getPackageManager();
         try {
-            return pm.getPackageInfo(getPackageName(), 0).firstInstallTime;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                return pm.getPackageInfo(getPackageName(), PackageManager.PackageInfoFlags.of(0)).firstInstallTime;
+            } else {
+                //noinspection deprecation
+                return pm.getPackageInfo(getPackageName(), 0).firstInstallTime;
+            }
         } catch (PackageManager.NameNotFoundException e) {
             Log.w(TAG, "Failed to get first install time", e);
             return 0;
@@ -146,7 +152,13 @@ public class MainActivity extends SyncthingActivity implements SyncthingService.
         super.onNewIntent(intent);
         
         if (NfcAdapter.ACTION_NDEF_DISCOVERED.equals(intent.getAction())) {
-            Tag tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG);
+            Tag tag;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG, Tag.class);
+            } else {
+                //noinspection deprecation
+                tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG);
+            }
             if (tag != null) {
                 Ndef ndef = Ndef.get(tag);
                 if (ndef != null) {
@@ -281,8 +293,6 @@ public class MainActivity extends SyncthingActivity implements SyncthingService.
                 startActivityForResult(QRScannerActivity.intent(this), QR_SCAN_REQUEST_CODE);
             } else if (event instanceof LinkThingViewModel.UiEvent.OpenWebGui) {
                 startActivity(new Intent(this, WebGuiActivity.class));
-            } else if (event instanceof LinkThingViewModel.UiEvent.OpenSettings) {
-                startActivity(new Intent(this, com.fmorea.syncthing.settings.SettingsActivity.class));
             } else if (event instanceof LinkThingViewModel.UiEvent.ManageFriends) {
                 startActivity(new Intent(this, com.fmorea.syncthing.syncthing.NetworkManagementActivity.class));
             } else if (event instanceof LinkThingViewModel.UiEvent.OpenChess) {

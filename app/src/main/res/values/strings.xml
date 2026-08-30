@@ -708,6 +708,7 @@
     <string name="error_decryption_failed">[Decryption error]</string>
     <string name="label_private_message">[Private message]</string>
     <string name="label_missing_public_key">[Missing public key]</string>
+    <string name="global_chat">Global Chat</string>
 </resources>
 
 

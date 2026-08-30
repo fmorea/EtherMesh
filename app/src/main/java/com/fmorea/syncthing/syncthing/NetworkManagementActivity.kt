@@ -119,12 +119,14 @@ class NetworkManagementActivity : SyncthingActivity(), SyncthingService.OnServic
 
     override fun onServiceConnected(name: android.content.ComponentName?, service: android.os.IBinder?) {
         super.onServiceConnected(name, service)
-        viewModel.updateSyncStatus(SyncthingService.State.ACTIVE, 100, getApi())
+        val explanation = if (getService() != null) getService().getRunDecisionExplanation() else ""
+        viewModel.updateSyncStatus(SyncthingService.State.ACTIVE, 100, getApi(), explanation)
         viewModel.refreshFriends()
     }
 
     override fun onServiceStateChange(currentState: SyncthingService.State) {
-        viewModel.updateSyncStatus(currentState, 100, getApi())
+        val explanation = if (getService() != null) getService().getRunDecisionExplanation() else ""
+        viewModel.updateSyncStatus(currentState, 100, getApi(), explanation)
     }
 }
 
@@ -266,8 +268,6 @@ fun NetworkManagementScreen(
         )
     }
 
-    val context = LocalContext.current
-
     Scaffold(
         modifier = Modifier.navigationBarsPadding(),
         topBar = {
@@ -290,12 +290,6 @@ fun NetworkManagementScreen(
                     }
                     IconButton(onClick = { viewModel.refreshFriends() }) {
                         Icon(Icons.Default.Sync, contentDescription = "Aggiorna")
-                    }
-                    IconButton(onClick = {
-                        val intent = Intent(context, com.fmorea.syncthing.settings.SettingsActivity::class.java)
-                        context.startActivity(intent)
-                    }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Impostazioni")
                     }
                 }
             )

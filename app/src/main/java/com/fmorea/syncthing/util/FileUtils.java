@@ -140,72 +140,133 @@ public class FileUtils {
         return mountPaths;
     }
 
-    public static File[] getMountedStoragePathsAsFileArray() {
-        List<String> paths = getMountedStoragePaths();
+    public static File[] getMountedStoragePathsAsFileArray(Context context) {
         List<File> files = new ArrayList<>();
-        for (String path : paths) {
-            File f = new File(path);
-            if (f.canRead()) {
-                files.add(f);
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            StorageManager sm = (StorageManager) context.getSystemService(Context.STORAGE_SERVICE);
+            for (android.os.storage.StorageVolume volume : sm.getStorageVolumes()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    File dir = volume.getDirectory();
+                    if (dir != null && dir.canRead()) {
+                        files.add(dir);
+                    }
+                } else {
+                    // Fallback to legacy path detection via reflection if needed, 
+                    // but usually getExternalFilesDirs is better.
+                    try {
+                        Method getPath = volume.getClass().getMethod("getPath");
+                        String path = (String) getPath.invoke(volume);
+                        if (path != null) {
+                            File f = new File(path);
+                            if (f.canRead()) files.add(f);
+                        }
+                    } catch (Exception ignored) {}
+                }
             }
         }
+        
+        // Fallback or additional paths from ContextCompat
+        for (File f : ContextCompat.getExternalFilesDirs(context, null)) {
+            if (f != null) {
+                // We want the root of the volume, not the app-specific folder.
+                // This is a bit hacky but works for most SD cards.
+                // /storage/XXXX-XXXX/Android/data/... -> /storage/XXXX-XXXX
+                String path = f.getAbsolutePath();
+                int androidIndex = path.indexOf("/Android/data/");
+                if (androidIndex > 0) {
+                    File root = new File(path.substring(0, androidIndex));
+                    if (root.canRead() && !files.contains(root)) {
+                        files.add(root);
+                    }
+                }
+            }
+        }
+
+        if (files.isEmpty()) {
+            // Last resort: legacy /proc/mounts reading
+            List<String> paths = getMountedStoragePaths();
+            for (String path : paths) {
+                File f = new File(path);
+                if (f.canRead()) {
+                    files.add(f);
+                }
+            }
+        }
+
         return files.toArray(new File[0]);
     }
 
     @SuppressLint("ObsoleteSdkInt")
     private static String getVolumePath(final String volumeId, final Context context) {
-        try {
-            if (HOME_VOLUME_NAME.equals(volumeId)) {
-                Log.v(TAG, "getVolumePath: isHomeVolume");
-                // Reading the environment var avoids hard coding the case of the "documents" folder.
-                return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS).getAbsolutePath();
-            }
-            if (DOWNLOADS_VOLUME_NAME.equals(volumeId)) {
-                Log.v(TAG, "getVolumePath: isDownloadsVolume");
-                return getExternalStorageDownloadsDirectory();
-            }
+        if (HOME_VOLUME_NAME.equals(volumeId)) {
+            Log.v(TAG, "getVolumePath: isHomeVolume");
+            // Reading the environment var avoids hard coding the case of the "documents" folder.
+            return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS).getAbsolutePath();
+        }
+        if (DOWNLOADS_VOLUME_NAME.equals(volumeId)) {
+            Log.v(TAG, "getVolumePath: isDownloadsVolume");
+            return getExternalStorageDownloadsDirectory();
+        }
 
+        try {
             StorageManager mStorageManager =
                     (StorageManager) context.getSystemService(Context.STORAGE_SERVICE);
-            Class<?> storageVolumeClazz = Class.forName("android.os.storage.StorageVolume");
-            Method getVolumeList = mStorageManager.getClass().getMethod("getVolumeList");
-            Method getUuid = storageVolumeClazz.getMethod("getUuid");
-            Method getPath = storageVolumeClazz.getMethod("getPath");
-            Method isPrimary = storageVolumeClazz.getMethod("isPrimary");
-            Object result = getVolumeList.invoke(mStorageManager);
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                List<android.os.storage.StorageVolume> storageVolumes = mStorageManager.getStorageVolumes();
+                for (android.os.storage.StorageVolume storageVolume : storageVolumes) {
+                    String uuid = storageVolume.getUuid();
+                    boolean primary = storageVolume.isPrimary();
+                    boolean isPrimaryVolume = (primary && PRIMARY_VOLUME_NAME.equals(volumeId));
+                    boolean isExternalVolume = ((uuid != null) && uuid.equals(volumeId));
 
-            final int length = Array.getLength(result);
-            for (int i = 0; i < length; i++) {
-                Object storageVolumeElement = Array.get(result, i);
-                String uuid = (String) getUuid.invoke(storageVolumeElement);
-                Boolean primary = (Boolean) isPrimary.invoke(storageVolumeElement);
-                Boolean isPrimaryVolume = (primary && PRIMARY_VOLUME_NAME.equals(volumeId));
-                Boolean isExternalVolume = ((uuid != null) && uuid.equals(volumeId));
-                Log.d(TAG, "Found volume with uuid='" + uuid +
-                    "', volumeId='" + volumeId +
-                    "', primary=" + primary +
-                    ", isPrimaryVolume=" + isPrimaryVolume +
-                    ", isExternalVolume=" + isExternalVolume
-                );
-                if (isPrimaryVolume || isExternalVolume) {
-                    Log.v(TAG, "getVolumePath: isPrimaryVolume || isExternalVolume");
-                    // Return path if the correct volume corresponding to volumeId was found.
-                    return (String) getPath.invoke(storageVolumeElement);
+                    if (isPrimaryVolume || isExternalVolume) {
+                        // On Android 11+ we can use getDirectory().getAbsolutePath()
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            File dir = storageVolume.getDirectory();
+                            if (dir != null) return dir.getAbsolutePath();
+                        }
+                        
+                        // Fallback to reflection for getPath() which is hidden
+                        try {
+                            Method getPath = storageVolume.getClass().getMethod("getPath");
+                            return (String) getPath.invoke(storageVolume);
+                        } catch (Exception e) {
+                            Log.w(TAG, "Failed to get path via reflection on API 24+", e);
+                        }
+                    }
+                }
+            } else {
+                // Legacy reflection for API 23
+                Class<?> storageVolumeClazz = Class.forName("android.os.storage.StorageVolume");
+                Method getVolumeList = mStorageManager.getClass().getMethod("getVolumeList");
+                Method getUuid = storageVolumeClazz.getMethod("getUuid");
+                Method getPath = storageVolumeClazz.getMethod("getPath");
+                Method isPrimary = storageVolumeClazz.getMethod("isPrimary");
+                Object result = getVolumeList.invoke(mStorageManager);
+
+                final int length = Array.getLength(result);
+                for (int i = 0; i < length; i++) {
+                    Object storageVolumeElement = Array.get(result, i);
+                    String uuid = (String) getUuid.invoke(storageVolumeElement);
+                    Boolean primary = (Boolean) isPrimary.invoke(storageVolumeElement);
+                    Boolean isPrimaryVolume = (primary && PRIMARY_VOLUME_NAME.equals(volumeId));
+                    Boolean isExternalVolume = ((uuid != null) && uuid.equals(volumeId));
+                    if (isPrimaryVolume || isExternalVolume) {
+                        return (String) getPath.invoke(storageVolumeElement);
+                    }
                 }
             }
         } catch (Exception e) {
             Log.w(TAG, "getVolumePath exception", e);
         }
-        // if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            Log.w(TAG, "getVolumePath failed for volumeId='" + volumeId + "'");
-            if (volumeId.equals("primary")) {
-                Log.d(TAG, "volumeId == primary");
-                return getInternalStorageRootAbsolutePath();
-            }
-            return "/storage/" + volumeId;
-        // }
-        // Log.e(TAG, "getVolumePath failed for volumeId='" + volumeId + "'");
-        // return null;
+
+        Log.w(TAG, "getVolumePath failed for volumeId='" + volumeId + "'");
+        if (volumeId.equals("primary")) {
+            return getInternalStorageRootAbsolutePath();
+        }
+        return "/storage/" + volumeId;
     }
 
     public static File getExternalFilesDir(final Context context, String type) {

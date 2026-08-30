@@ -9,6 +9,8 @@ import android.content.SharedPreferences;
 import android.content.SyncStatusObserver;
 import android.content.res.Resources;
 import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.NetworkInfo;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
@@ -141,7 +143,27 @@ public class RunConditionMonitor {
          * Register broadcast receivers.
          */
         // NetworkReceiver
-        ReceiverManager.registerReceiver(mContext, new NetworkReceiver(), new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            ConnectivityManager cm = (ConnectivityManager) mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm != null) {
+                cm.registerDefaultNetworkCallback(new ConnectivityManager.NetworkCallback() {
+                    @Override
+                    public void onAvailable(android.net.Network network) {
+                        updateShouldRunDecision();
+                    }
+                    @Override
+                    public void onLost(android.net.Network network) {
+                        updateShouldRunDecision();
+                    }
+                    @Override
+                    public void onCapabilitiesChanged(android.net.Network network, android.net.NetworkCapabilities networkCapabilities) {
+                        updateShouldRunDecision();
+                    }
+                });
+            }
+        } else {
+            ReceiverManager.registerReceiver(mContext, new NetworkReceiver(), new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION));
+        }
 
         // BatteryReceiver
         IntentFilter filter = new IntentFilter();
@@ -502,7 +524,7 @@ public class RunConditionMonitor {
      * Constants.PREF_RUN_ON_METERED_WIFI
      */
     private SyncConditionResult checkConditionSyncOnMeteredWifi(String prefNameSyncOnMeteredWifi) {
-        boolean prefSyncOnMeteredWifi = mPreferences.getBoolean(prefNameSyncOnMeteredWifi, false);
+        boolean prefSyncOnMeteredWifi = mPreferences.getBoolean(prefNameSyncOnMeteredWifi, true);
         if (prefSyncOnMeteredWifi) {
             // Condition is always met as we allow both types of wifi - metered and non-metered.
             return new SyncConditionResult(true, "\n" + res.getString(R.string.reason_on_metered_nonmetered_wifi));
@@ -537,7 +559,7 @@ public class RunConditionMonitor {
      * Constants.PREF_RUN_ON_ROAMING
      */
     private SyncConditionResult checkConditionSyncOnRoaming(String prefNameSyncOnRoaming) {
-        boolean prefSyncOnRoaming = mPreferences.getBoolean(prefNameSyncOnRoaming, false);
+        boolean prefSyncOnRoaming = mPreferences.getBoolean(prefNameSyncOnRoaming, true);
         if (prefSyncOnRoaming) {
             // Condition is always met as we allow both types of mobile data networks - roaming and non-roaming.
             return new SyncConditionResult(true, "\n" + res.getString(R.string.reason_on_roaming_nonroaming_mobile_data));
@@ -770,16 +792,13 @@ public class RunConditionMonitor {
 
     private boolean isMeteredNetworkConnection() {
         ConnectivityManager cm = (ConnectivityManager) mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
-        NetworkInfo ni = cm.getActiveNetworkInfo();
-        if (ni == null) {
-            // In flight mode.
-            return false;
-        }
-        if (!ni.isConnected()) {
-            // No network connection.
-            return false;
-        }
-        if (ni.getType() == ConnectivityManager.TYPE_ETHERNET) {
+        if (cm == null) return false;
+        Network network = cm.getActiveNetwork();
+        if (network == null) return false;
+        NetworkCapabilities capabilities = cm.getNetworkCapabilities(network);
+        if (capabilities == null) return false;
+
+        if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
             /**
              * We treat Wi-Fi and ETHERNET as "Wi-Fi" connection.
              * Assume ETHERNET connection is un-metered to allow syncing on
@@ -792,59 +811,81 @@ public class RunConditionMonitor {
 
     private boolean isMobileDataConnection() {
         ConnectivityManager cm = (ConnectivityManager) mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
-        NetworkInfo ni = cm.getActiveNetworkInfo();
-        if (ni == null) {
-            // In flight mode.
-            return false;
+        if (cm == null) return false;
+        Network network = cm.getActiveNetwork();
+        if (network != null) {
+            NetworkCapabilities capabilities = cm.getNetworkCapabilities(network);
+            if (capabilities != null) {
+                if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
+                    capabilities.hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH)) {
+                    return true;
+                }
+                if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+                    for (Network n : cm.getAllNetworks()) {
+                        NetworkCapabilities nc = cm.getNetworkCapabilities(n);
+                        if (nc != null && (nc.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
+                                           nc.hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH))) {
+                            return true;
+                        }
+                    }
+                }
+            }
         }
-        if (!ni.isConnected()) {
-            // No network connection.
-            return false;
-        }
-        switch (ni.getType()) {
-            case ConnectivityManager.TYPE_BLUETOOTH:
-            case ConnectivityManager.TYPE_MOBILE:
-            case ConnectivityManager.TYPE_MOBILE_DUN:
-            case ConnectivityManager.TYPE_MOBILE_HIPRI:
-                return true;
-            default:
-                return false;
-        }
+        return false;
     }
 
     private boolean isRoamingNetworkConnection() {
         ConnectivityManager cm = (ConnectivityManager) mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
-        NetworkInfo ni = cm.getActiveNetworkInfo();
-        if (ni == null) {
-            // In flight mode.
-            return false;
+        if (cm == null) return false;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            Network network = cm.getActiveNetwork();
+            if (network != null) {
+                NetworkCapabilities capabilities = cm.getNetworkCapabilities(network);
+                if (capabilities != null) {
+                    if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+                        for (Network n : cm.getAllNetworks()) {
+                            NetworkCapabilities nc = cm.getNetworkCapabilities(n);
+                            if (nc != null && nc.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) &&
+                                !nc.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING)) {
+                                return true;
+                            }
+                        }
+                    } else if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) &&
+                               !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING)) {
+                        return true;
+                    }
+                }
+            }
+        } else {
+            NetworkInfo ni = cm.getActiveNetworkInfo();
+            return ni != null && ni.isConnected() && ni.isRoaming();
         }
-        if (!ni.isConnected()) {
-            // No network connection.
-            return false;
-        }
-        return ni.isRoaming();
+        return false;
     }
 
     private boolean isWifiOrEthernetConnection() {
         ConnectivityManager cm = (ConnectivityManager) mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
-        NetworkInfo ni = cm.getActiveNetworkInfo();
-        if (ni == null) {
-            // In flight mode.
-            return false;
+        if (cm == null) return false;
+        Network network = cm.getActiveNetwork();
+        if (network != null) {
+            NetworkCapabilities capabilities = cm.getNetworkCapabilities(network);
+            if (capabilities != null) {
+                if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                    capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
+                    return true;
+                }
+                if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+                    for (Network n : cm.getAllNetworks()) {
+                        NetworkCapabilities nc = cm.getNetworkCapabilities(n);
+                        if (nc != null && (nc.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                                           nc.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))) {
+                            return true;
+                        }
+                    }
+                }
+            }
         }
-        if (!ni.isConnected()) {
-            // No network connection.
-            return false;
-        }
-        switch (ni.getType()) {
-            case ConnectivityManager.TYPE_WIFI:
-            case ConnectivityManager.TYPE_WIMAX:
-            case ConnectivityManager.TYPE_ETHERNET:
-                return true;
-            default:
-                return false;
-        }
+        return false;
     }
 
     private boolean isWifiConnectionWhitelisted(Set<String> whitelistedSsids)

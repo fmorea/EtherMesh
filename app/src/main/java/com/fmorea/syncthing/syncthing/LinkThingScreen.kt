@@ -504,7 +504,7 @@ fun LinkThingScreen(
                                     chatMode == LinkThingChatMode.HUB -> "EtherMesh"
                                     chatMode == LinkThingChatMode.PRIVATE && selectedRecipientId != null -> deviceNames[selectedRecipientId] ?: selectedRecipientId!!.take(8)
                                     chatMode == LinkThingChatMode.PRIVATE -> "Inizia Chat"
-                                    else -> localDevice?.name ?: "Broadcast EtherMesh"
+                                    else -> localDevice?.name ?: stringResource(R.string.global_chat)
                                 }
                                 
                                 val titleText = when (currentTab) {
@@ -590,14 +590,6 @@ fun LinkThingScreen(
                                 leadingIcon = { Icon(Icons.Default.QrCode, null) }
                             )
                             DropdownMenuItem(
-                                text = { Text("Impostazioni App") },
-                                onClick = {
-                                    showMenu = false
-                                    viewModel.openSettings()
-                                },
-                                leadingIcon = { Icon(Icons.Default.Settings, null) }
-                            )
-                            DropdownMenuItem(
                                 text = { Text("Console Avanzata (Web)") },
                                 onClick = {
                                     showMenu = false
@@ -661,105 +653,146 @@ fun LinkThingScreen(
                         val showChatInput = chatMode != LinkThingChatMode.HUB && (chatMode != LinkThingChatMode.PRIVATE || selectedRecipientId != null)
                         if (showChatInput) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp).fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
+                                modifier = Modifier
+                                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                                    .fillMaxWidth(),
+                                verticalAlignment = Alignment.Bottom
                             ) {
                                 if (isRecording) {
-                                    Icon(Icons.Default.Mic, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 12.dp))
-                                    Text("Registrazione in corso...", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-                                    IconButton(onClick = {
-                                        isRecording = false
-                                        recorder?.apply { try { stop() } catch(e: Exception) {}; release() }
-                                        recorder = null
-                                        audioFile?.delete()
-                                    }) {
-                                        Icon(Icons.Default.Delete, contentDescription = "Annulla", tint = MaterialTheme.colorScheme.error)
-                                    }
-                                    IconButton(onClick = {
-                                        isRecording = false
-                                        recorder?.apply { try { stop(); release() } catch (e: Exception) {} }
-                                        recorder = null
-                                        audioFile?.let { viewModel.sendAudio(it) }
-                                    }) {
-                                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Invia Audio", tint = MaterialTheme.colorScheme.primary)
-                                    }
-                                } else {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        FormattingToolbar(textValue = inputText, onValueChange = { inputText = it }, modifier = Modifier.fillMaxWidth())
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            IconButton(onClick = { filePickerLauncher.launch("*/*") }) {
-                                                Icon(Icons.Default.AttachFile, contentDescription = "Allega", tint = MaterialTheme.colorScheme.primary)
-                                            }
-                                            TextField(
-                                                value = inputText,
-                                                onValueChange = { inputText = it },
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f),
+                                        shape = RoundedCornerShape(28.dp),
+                                        modifier = Modifier.weight(1f).height(56.dp)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(horizontal = 16.dp)
+                                        ) {
+                                            Icon(Icons.Default.Mic, null, tint = MaterialTheme.colorScheme.error)
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Text(
+                                                "Registrazione...", 
                                                 modifier = Modifier.weight(1f),
-                                                placeholder = { Text("Messaggio...") },
-                                                maxLines = 4,
-                                                shape = RoundedCornerShape(24.dp),
-                                                colors = TextFieldDefaults.colors(
-                                                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                                    focusedIndicatorColor = Color.Transparent,
-                                                    unfocusedIndicatorColor = Color.Transparent,
-                                                    disabledIndicatorColor = Color.Transparent,
-                                                    errorIndicatorColor = Color.Transparent
-                                                )
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.error
                                             )
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            if (inputText.text.isNotBlank()) {
-                                                IconButton(
-                                                    onClick = {
-                                                        if (selectedRecipientId != null) {
-                                                            viewModel.sendMail(selectedRecipientId!!, inputText.text)
-                                                        } else {
-                                                            viewModel.sendMessage(inputText.text, replyingTo)
-                                                        }
-                                                        inputText = TextFieldValue("")
-                                                        replyingTo = null
-                                                        selectedRecipientId = null
-                                                        focusManager.clearFocus()
-                                                    },
-                                                    modifier = Modifier.background(
-                                                        if (selectedRecipientId != null) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary, 
-                                                        CircleShape
-                                                    )
-                                                ) {
-                                                    Icon(
-                                                        if (selectedRecipientId != null) Icons.Default.Lock else Icons.AutoMirrored.Filled.Send, 
-                                                        contentDescription = "Invia", 
-                                                        tint = if (selectedRecipientId != null) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onPrimary
-                                                    )
-                                                }
-                                            } else {
-                                                IconButton(
-                                                    onClick = {
-                                                        if (recordPermissionState.status.isGranted) {
-                                                            try {
-                                                                val file = File(context.cacheDir, "rec_${System.currentTimeMillis()}.m4a")
-                                                                audioFile = file
-                                                                val newRecorder = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) MediaRecorder(context) else @Suppress("DEPRECATION") MediaRecorder()
-                                                                newRecorder.apply {
-                                                                    setAudioSource(MediaRecorder.AudioSource.MIC)
-                                                                    setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                                                                    setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                                                                    setAudioSamplingRate(44100)
-                                                                    setAudioEncodingBitRate(128000)
-                                                                    setOutputFile(file.absolutePath)
-                                                                    prepare()
-                                                                    start()
-                                                                }
-                                                                recorder = newRecorder
-                                                                isRecording = true
-                                                            } catch (e: Exception) { isRecording = false; audioFile = null }
-                                                        } else { recordPermissionState.launchPermissionRequest() }
-                                                    },
-                                                    modifier = Modifier.background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
-                                                ) {
-                                                    Icon(Icons.Default.Mic, contentDescription = "Registra", tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                                                }
+                                            IconButton(onClick = {
+                                                isRecording = false
+                                                recorder?.apply { try { stop() } catch(e: Exception) {}; release() }
+                                                recorder = null
+                                                audioFile?.delete()
+                                            }) {
+                                                Icon(Icons.Default.Delete, "Annulla", tint = MaterialTheme.colorScheme.error)
                                             }
                                         }
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    FloatingActionButton(
+                                        onClick = {
+                                            isRecording = false
+                                            recorder?.apply { try { stop(); release() } catch (e: Exception) {} }
+                                            recorder = null
+                                            audioFile?.let { viewModel.sendAudio(it) }
+                                        },
+                                        shape = CircleShape,
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.size(56.dp),
+                                        elevation = FloatingActionButtonDefaults.elevation(0.dp, 0.dp)
+                                    ) {
+                                        Icon(Icons.AutoMirrored.Filled.Send, "Invia Audio")
+                                    }
+                                } else {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        shape = RoundedCornerShape(28.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Column {
+                                            FormattingToolbar(
+                                                textValue = inputText, 
+                                                onValueChange = { inputText = it },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                extraActions = {
+                                                    EditorActionButton(
+                                                        icon = Icons.Default.Mic,
+                                                        description = "Registra Audio",
+                                                        onClick = {
+                                                            if (recordPermissionState.status.isGranted) {
+                                                                try {
+                                                                    val file = File(context.cacheDir, "rec_${System.currentTimeMillis()}.m4a")
+                                                                    audioFile = file
+                                                                    val newRecorder = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) MediaRecorder(context) else @Suppress("DEPRECATION") MediaRecorder()
+                                                                    newRecorder.apply {
+                                                                        setAudioSource(MediaRecorder.AudioSource.MIC)
+                                                                        setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                                                                        setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                                                                        setAudioSamplingRate(44100)
+                                                                        setAudioEncodingBitRate(128000)
+                                                                        setOutputFile(file.absolutePath)
+                                                                        prepare()
+                                                                        start()
+                                                                    }
+                                                                    recorder = newRecorder
+                                                                    isRecording = true
+                                                                } catch (e: Exception) { isRecording = false; audioFile = null }
+                                                            } else { recordPermissionState.launchPermissionRequest() }
+                                                        }
+                                                    )
+                                                }
+                                            )
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.padding(bottom = 4.dp, start = 4.dp, end = 4.dp)
+                                            ) {
+                                                IconButton(onClick = { filePickerLauncher.launch("*/*") }) {
+                                                    Icon(Icons.Default.Add, contentDescription = "Allega", tint = MaterialTheme.colorScheme.primary)
+                                                }
+                                                TextField(
+                                                    value = inputText,
+                                                    onValueChange = { inputText = it },
+                                                    modifier = Modifier.weight(1f),
+                                                    placeholder = { Text("Scrivi un messaggio...") },
+                                                    maxLines = 6,
+                                                    colors = TextFieldDefaults.colors(
+                                                        focusedContainerColor = Color.Transparent,
+                                                        unfocusedContainerColor = Color.Transparent,
+                                                        focusedIndicatorColor = Color.Transparent,
+                                                        unfocusedIndicatorColor = Color.Transparent,
+                                                        disabledIndicatorColor = Color.Transparent,
+                                                        errorIndicatorColor = Color.Transparent
+                                                    ),
+                                                    textStyle = MaterialTheme.typography.bodyLarge
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    val isTextBlank = inputText.text.isBlank()
+                                    FloatingActionButton(
+                                        onClick = {
+                                            if (!isTextBlank) {
+                                                if (selectedRecipientId != null) {
+                                                    viewModel.sendMail(selectedRecipientId!!, inputText.text)
+                                                } else {
+                                                    viewModel.sendMessage(inputText.text, replyingTo)
+                                                }
+                                                inputText = TextFieldValue("")
+                                                replyingTo = null
+                                                selectedRecipientId = null
+                                                focusManager.clearFocus()
+                                            }
+                                        },
+                                        shape = CircleShape,
+                                        containerColor = if (isTextBlank) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary,
+                                        contentColor = if (isTextBlank) MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.size(56.dp),
+                                        elevation = FloatingActionButtonDefaults.elevation(0.dp, 0.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (selectedRecipientId != null) Icons.Default.Lock else Icons.AutoMirrored.Filled.Send,
+                                            contentDescription = "Invia"
+                                        )
                                     }
                                 }
                             }
@@ -1694,57 +1727,142 @@ fun ApplicationsTabContent(
     onShowGraph: () -> Unit,
     onOpenCalendar: () -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
-        AppCard(
-            title = "Rubrica",
-            description = "Gestisci i contatti e le identità verificate.",
-            icon = Icons.Default.ContactPage,
-            onClick = onOpenRubrica
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "Strumenti Decentralizzati",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(bottom = 24.dp, top = 8.dp).align(Alignment.Start)
         )
+
+        val rowModifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
         
-        Spacer(modifier = Modifier.height(12.dp))
+        Row(modifier = rowModifier, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            AppCard(
+                title = "Rubrica",
+                description = "Contatti e identità",
+                icon = Icons.Default.ContactPage,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.weight(1f),
+                onClick = onOpenRubrica
+            )
+            AppCard(
+                title = "Calendario",
+                description = "Eventi condivisi",
+                icon = Icons.Default.CalendarToday,
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                modifier = Modifier.weight(1f),
+                onClick = onOpenCalendar
+            )
+        }
+        
+        Row(modifier = rowModifier, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            AppCard(
+                title = "Network",
+                description = "Topologia Mesh",
+                icon = Icons.Default.Hub,
+                color = MaterialTheme.colorScheme.tertiaryContainer,
+                modifier = Modifier.weight(1f),
+                onClick = onShowGraph
+            )
+            AppCard(
+                title = "Scacchi",
+                description = "Sfida decentralizzata",
+                icon = Icons.Default.Extension,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.weight(1f),
+                onClick = onPlayChess
+            )
+        }
 
-        AppCard(
-            title = "Network Graph",
-            description = "Visualizza la topologia e i file di scoperta rete.",
-            icon = Icons.Default.Hub,
-            onClick = onShowGraph
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        AppCard(
-            title = "Calendario",
-            description = "Pianifica eventi e appuntamenti condivisi.",
-            icon = Icons.Default.CalendarToday,
-            onClick = onOpenCalendar
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        AppCard(
-            title = "Scacchi",
-            description = "Sfida i tuoi amici in una partita decentralizzata.",
-            icon = Icons.Default.Extension,
-            onClick = onPlayChess
-        )
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.VerifiedUser, 
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = "Sicurezza EtherMesh",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Tutte le tue comunicazioni e i file nel Drive sono cifrati end-to-end e sincronizzati direttamente P2P tra i tuoi dispositivi e i tuoi amici.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
 
 @Composable
-fun AppCard(title: String, description: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+fun AppCard(
+    title: String, 
+    description: String, 
+    icon: androidx.compose.ui.graphics.vector.ImageVector, 
+    color: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = modifier.height(140.dp),
+        onClick = onClick,
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+        tonalElevation = 1.dp
     ) {
-        Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), modifier = Modifier.size(48.dp)) {
-                Box(contentAlignment = Alignment.Center) { Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp)) }
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Surface(
+                shape = CircleShape, 
+                color = color.copy(alpha = 0.3f), 
+                modifier = Modifier.size(40.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) { 
+                    Icon(
+                        imageVector = icon, 
+                        contentDescription = null, 
+                        tint = MaterialTheme.colorScheme.onSurface, 
+                        modifier = Modifier.size(20.dp)
+                    ) 
+                }
             }
-            Spacer(modifier = Modifier.width(16.dp))
             Column {
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    text = title, 
+                    style = MaterialTheme.typography.titleMedium, 
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Text(
+                    text = description, 
+                    style = MaterialTheme.typography.labelSmall, 
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
@@ -1784,37 +1902,95 @@ fun MessageBubble(
         val locale = ConfigurationCompat.getLocales(configuration).get(0) ?: Locale.getDefault()
         SimpleDateFormat("HH:mm", locale).format(Date(message.timestamp)) 
     }
-    val bubbleColor = if (message.isLocal) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-    val shape = if (message.isLocal) RoundedCornerShape(16.dp, 16.dp, 2.dp, 16.dp) else RoundedCornerShape(16.dp, 16.dp, 16.dp, 2.dp)
-    Surface(modifier = Modifier.widthIn(max = 280.dp).clip(shape), color = bubbleColor, shadowElevation = 0.5.dp, shape = shape) {
-        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+    
+    val bubbleColor = if (message.isLocal) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f)
+    } else {
+        MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp)
+    }
+    
+    val shape = if (message.isLocal) {
+        RoundedCornerShape(20.dp, 20.dp, 4.dp, 20.dp)
+    } else {
+        RoundedCornerShape(20.dp, 20.dp, 20.dp, 4.dp)
+    }
+
+    Surface(
+        modifier = Modifier
+            .widthIn(max = 300.dp)
+            .padding(vertical = 1.dp),
+        color = bubbleColor,
+        shape = shape,
+        shadowElevation = if (message.isLocal) 1.dp else 0.5.dp,
+        tonalElevation = if (message.isLocal) 0.dp else 2.dp
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             if (!message.isLocal) {
                 val displayName = profile?.getDisplayName() ?: deviceNames[message.deviceId] ?: message.deviceId.take(8)
-                Text(text = displayName, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 2.dp))
+                Text(
+                    text = displayName,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
             }
+            
             if (message.replyToTimestamp != null) {
                 val repliedMsg = allMessages.find { it.timestamp == message.replyToTimestamp && it.deviceId == message.replyToDeviceId }
-                Surface(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f), shape = RoundedCornerShape(4.dp), modifier = Modifier.padding(bottom = 4.dp).fillMaxWidth()) {
+                Surface(
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.padding(bottom = 6.dp).fillMaxWidth()
+                ) {
                     Row(modifier = Modifier.height(IntrinsicSize.Min)) {
-                        Box(modifier = Modifier.width(4.dp).fillMaxHeight().background(MaterialTheme.colorScheme.primary))
-                        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .width(3.dp)
+                                .fillMaxHeight()
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
+                        )
+                        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
                             val replierName = deviceNames[message.replyToDeviceId] ?: message.replyToDeviceId?.take(8) ?: "Sconosciuto"
-                            Text(replierName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                            Text(repliedMsg?.content ?: "Messaggio originale non trovato", style = MaterialTheme.typography.bodySmall, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                text = replierName,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = repliedMsg?.content ?: "Messaggio originale non trovato",
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
             }
+            
             if (message.isMail) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 2.dp)) {
-                    Icon(Icons.Default.Lock, null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.tertiary)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .padding(bottom = 4.dp)
+                        .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = null,
+                        modifier = Modifier.size(12.dp),
+                        tint = MaterialTheme.colorScheme.tertiary
+                    )
                     Spacer(modifier = Modifier.width(4.dp))
                     
                     val senderName = profile?.getDisplayName() ?: deviceNames[message.deviceId] ?: message.deviceId.take(8)
                     val labelText = if (message.isLocal) {
                         "Privato per ${deviceNames[message.recipientId] ?: message.recipientId?.take(8)}"
                     } else {
-                        "Inviato da $senderName (Cifrato)"
+                        "Inviato da $senderName"
                     }
                     
                     Text(
@@ -1825,49 +2001,110 @@ fun MessageBubble(
                     )
                 }
             }
+            
             if (!message.isAttachment) {
-                MarkdownText(text = message.content, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 2.dp))
+                MarkdownText(
+                    text = message.content,
+                    style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 22.sp),
+                    modifier = Modifier.padding(bottom = 2.dp)
+                )
             } else if (message.file != null) {
                 val extension = remember(message.file.name) { message.file.extension.lowercase() }
                 val isImage = remember(extension) { extension in listOf("jpg", "jpeg", "png", "webp", "gif") }
                 val isAudio = remember(extension) { extension in listOf("m4a", "mp3", "wav", "ogg") }
                 val isChess = remember(extension) { extension == "chess" }
                 val isCal = remember(extension) { extension == "cal" }
-                if (isImage) { AsyncImage(file = message.file, modifier = Modifier.fillMaxWidth().heightIn(max = 180.dp).clip(RoundedCornerShape(8.dp))); Spacer(modifier = Modifier.height(4.dp)) }
-                if (isAudio) { AudioPlayer(message.file) } 
-                else if (isChess) { val senderName = profile?.getDisplayName() ?: deviceNames[message.deviceId] ?: message.deviceId.take(8); ChessChallengeView(message.file, senderName) } 
-                else if (isCal) { 
+                
+                if (isImage) {
+                    AsyncImage(
+                        file = message.file,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 200.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
+                
+                if (isAudio) {
+                    AudioPlayer(message.file)
+                } else if (isChess) {
+                    val senderName = profile?.getDisplayName() ?: deviceNames[message.deviceId] ?: message.deviceId.take(8)
+                    ChessChallengeView(message.file, senderName)
+                } else if (isCal) { 
                     val senderName = profile?.getDisplayName() ?: deviceNames[message.deviceId] ?: message.deviceId.take(8)
                     CalendarCardView(message.file, senderName, onOpenCalendar = onOpenCalendar)
-                }
-                else if (!isImage) { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.AutoMirrored.Filled.InsertDriveFile, null, modifier = Modifier.size(18.dp), tint = if (message.isLocal) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary); Spacer(modifier = Modifier.width(4.dp)); Text(text = message.displayName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface, maxLines = 1) } }
-            } else { Text(text = message.content, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface) }
-            Text(text = date, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f), modifier = Modifier.align(Alignment.End).padding(top = 2.dp))
-            if (message.isLocal) {
-                val ackCount = message.acknowledgments.size
-                Row(modifier = Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
-                    if (Constants.isBootstrapId(message.deviceId)) {
+                } else if (!isImage) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                            .padding(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.InsertDriveFile,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                            tint = if (message.isLocal) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "EtherMesh Bootstrapper", 
-                            style = MaterialTheme.typography.labelSmall, 
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.ExtraBold,
-                            modifier = Modifier.padding(end = 8.dp)
+                            text = message.displayName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
+                }
+            } else {
+                Text(
+                    text = message.content,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            
+            Row(
+                modifier = Modifier.align(Alignment.End).padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = date,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+                
+                if (message.isLocal) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    val ackCount = message.acknowledgments.size
                     if (ackCount > 0) {
-                        Icon(Icons.Default.DoneAll, "Letto da $ackCount", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                        Icon(
+                            imageVector = Icons.Default.DoneAll,
+                            contentDescription = "Letto da $ackCount",
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     } else {
-                        Icon(Icons.Default.Done, "Inviato", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.outline)
+                        Icon(
+                            imageVector = Icons.Default.Done,
+                            contentDescription = "Inviato",
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.outline
+                        )
                     }
                 }
-            } else if (Constants.isBootstrapId(message.deviceId)) {
+            }
+            
+            if (Constants.isBootstrapId(message.deviceId)) {
                 Text(
-                    "EtherMesh Bootstrapper", 
+                    text = "EtherMesh Bootstrapper", 
                     style = MaterialTheme.typography.labelSmall, 
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.ExtraBold,
-                    modifier = Modifier.padding(top = 2.dp)
+                    modifier = Modifier.padding(top = 4.dp),
+                    fontSize = 8.sp
                 )
             }
         }
@@ -1950,74 +2187,143 @@ fun ChatHub(
     onOpenBroadcast: () -> Unit,
     onOpenPrivate: (String) -> Unit
 ) {
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 16.dp)
+    ) {
         item {
-            SectionHeader(text = "Conversazioni di Gruppo")
+            SectionHeader(text = "Canali Mesh")
         }
         item {
-            ListItem(
-                headlineContent = { Text("EtherMesh Broadcast") },
-                supportingContent = { 
-                    Text(
-                        broadcastLastMsg?.content ?: "Nessun messaggio",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    ) 
-                },
-                leadingContent = {
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Groups, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            Surface(
+                onClick = onOpenBroadcast,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = Color.Transparent
+            ) {
+                ListItem(
+                    headlineContent = { 
+                        Text(
+                            text = stringResource(R.string.global_chat),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        ) 
+                    },
+                    supportingContent = { 
+                        Text(
+                            text = broadcastLastMsg?.content ?: "Nessun messaggio recente",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        ) 
+                    },
+                    leadingContent = {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(52.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Groups, 
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
                         }
-                    }
-                },
-                modifier = Modifier.clickable { onOpenBroadcast() }
-            )
+                    },
+                    trailingContent = {
+                        if (broadcastLastMsg != null) {
+                            val configuration = LocalConfiguration.current
+                            val timeStr = remember(broadcastLastMsg.timestamp, configuration) {
+                                val locale = ConfigurationCompat.getLocales(configuration).get(0) ?: Locale.getDefault()
+                                SimpleDateFormat("HH:mm", locale).format(Date(broadcastLastMsg.timestamp))
+                            }
+                            Text(
+                                text = timeStr,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+            }
         }
         
         item {
-            SectionHeader(text = "Chat Private")
+            SectionHeader(text = "Messaggi Diretti")
         }
         
         if (privateConversations.isEmpty()) {
             item {
-                Text(
-                    "Nessuna conversazione privata attiva.",
-                    modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.outline
-                )
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Inizia a scrivere ai tuoi contatti in modo cifrato e sicuro.",
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
             }
         } else {
             items(privateConversations) { summary ->
-                ListItem(
-                    headlineContent = { Text(summary.displayName) },
-                    supportingContent = { 
-                        Text(
-                            summary.lastMsg.content,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        ) 
-                    },
-                    leadingContent = { Avatar(deviceId = summary.deviceId, profile = summary.profile, size = 40) },
-                    trailingContent = {
-                        val configuration = LocalConfiguration.current
-                        val timeStr = remember(summary.lastMsg.timestamp, configuration) {
-                            val locale = ConfigurationCompat.getLocales(configuration).get(0) ?: Locale.getDefault()
-                            SimpleDateFormat("HH:mm", locale).format(Date(summary.lastMsg.timestamp))
-                        }
-                        Text(
-                            timeStr,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.outline
-                        )
-                    },
-                    modifier = Modifier.clickable { onOpenPrivate(summary.deviceId) }
-                )
+                Surface(
+                    onClick = { onOpenPrivate(summary.deviceId) },
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color.Transparent
+                ) {
+                    ListItem(
+                        headlineContent = { 
+                            Text(
+                                text = summary.displayName,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            ) 
+                        },
+                        supportingContent = { 
+                            Text(
+                                text = summary.lastMsg.content,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            ) 
+                        },
+                        leadingContent = { 
+                            Avatar(deviceId = summary.deviceId, profile = summary.profile, size = 52) 
+                        },
+                        trailingContent = {
+                            val configuration = LocalConfiguration.current
+                            val timeStr = remember(summary.lastMsg.timestamp, configuration) {
+                                val locale = ConfigurationCompat.getLocales(configuration).get(0) ?: Locale.getDefault()
+                                SimpleDateFormat("HH:mm", locale).format(Date(summary.lastMsg.timestamp))
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = timeStr,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                                if (summary.lastMsg.isMail) {
+                                    Icon(
+                                        imageVector = Icons.Default.Lock, 
+                                        contentDescription = "Cifrato",
+                                        modifier = Modifier.size(12.dp).padding(top = 4.dp),
+                                        tint = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f)
+                                    )
+                                }
+                            }
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+                }
             }
         }
     }

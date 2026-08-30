@@ -144,7 +144,7 @@ public class FolderPickerActivity extends SyncthingActivity
             roots.add(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS));
 
             // Add paths where we might have read-only access.
-            File[] mountedStoragePaths = FileUtils.getMountedStoragePathsAsFileArray();
+            File[] mountedStoragePaths = FileUtils.getMountedStoragePathsAsFileArray(this);
             if (mountedStoragePaths != null) {
                 Collections.addAll(roots, mountedStoragePaths);
             }

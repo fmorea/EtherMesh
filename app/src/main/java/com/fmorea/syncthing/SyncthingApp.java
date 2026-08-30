@@ -7,8 +7,6 @@ import androidx.appcompat.app.AppCompatDelegate;
 import androidx.preference.PreferenceManager;
 import com.fmorea.syncthing.service.Constants;
 import com.fmorea.syncthing.util.PreferenceMigration;
-import androidx.emoji2.bundled.BundledEmojiCompatConfig;
-import androidx.emoji2.text.EmojiCompat;
 
 import javax.inject.Inject;
 
@@ -25,11 +23,14 @@ public class SyncthingApp extends Application {
         
         // Apply theme early to avoid recreation
         String themeValue = sharedPreferences.getString(Constants.PREF_APP_THEME, "system");
-        int prefAppTheme = switch (themeValue) {
-            case "light" -> AppCompatDelegate.MODE_NIGHT_NO;
-            case "dark" -> AppCompatDelegate.MODE_NIGHT_YES;
-            default -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM;
-        };
+        int prefAppTheme;
+        if ("light".equals(themeValue)) {
+            prefAppTheme = AppCompatDelegate.MODE_NIGHT_NO;
+        } else if ("dark".equals(themeValue)) {
+            prefAppTheme = AppCompatDelegate.MODE_NIGHT_YES;
+        } else {
+            prefAppTheme = AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM;
+        }
         AppCompatDelegate.setDefaultNightMode(prefAppTheme);
 
         mComponent = DaggerDaggerComponent.builder()
@@ -38,14 +39,6 @@ public class SyncthingApp extends Application {
         mComponent.inject(this);
 
         // Set VM policy to avoid crash when sending folder URI to file manager.
-        StrictMode.VmPolicy vmPolicy = new StrictMode.VmPolicy.Builder()
-                .detectAll()
-                .penaltyLog()
-                .build();
-        StrictMode.setVmPolicy(vmPolicy);
-
-        // Initialize EmojiCompat with bundled font for compatibility on older Android versions
-        EmojiCompat.init(new BundledEmojiCompatConfig(this));
 
         /*
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P)

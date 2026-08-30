@@ -28,7 +28,6 @@ import com.fmorea.syncthing.service.AppPrefs;
 import com.fmorea.syncthing.service.Constants;
 import com.fmorea.syncthing.service.RestApi;
 import com.fmorea.syncthing.service.SyncthingService;
-import com.fmorea.syncthing.settings.SettingsActivity;
 import com.fmorea.syncthing.util.Util;
 import com.fmorea.syncthing.views.SegmentedButton;
 import com.fmorea.syncthing.views.SegmentedButton.OnClickListenerSegmentedButton;
@@ -183,7 +182,7 @@ public class StatusFragment extends ListFragment implements SyncthingService.OnS
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         if (item.getItemId() == R.id.open_preferences) {
-            startActivity(new Intent(getContext(), SettingsActivity.class));
+            // Settings removed
             return true;
         }
         return super.onOptionsItemSelected(item);
