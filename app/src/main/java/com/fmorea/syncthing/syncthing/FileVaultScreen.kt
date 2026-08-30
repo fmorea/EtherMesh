@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fmorea.syncthing.model.Device
 import com.fmorea.syncthing.R
 import com.fmorea.syncthing.service.Constants
@@ -69,10 +70,11 @@ fun FileVaultScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val friends by viewModel.friends.collectAsState()
+    val friends by viewModel.friends.collectAsStateWithLifecycle()
     var isDashboard by remember(initialCategory) { mutableStateOf(initialCategory == null) }
     var viewMode by remember { mutableStateOf(FileViewMode.LIST) }
     var sortMode by remember { mutableStateOf(FileSortMode.TYPE) }
+    var showExtensions by remember { mutableStateOf(true) }
 
     val labelComm = stringResource(R.string.category_messages)
     val labelNet = stringResource(R.string.category_network)
@@ -116,8 +118,13 @@ fun FileVaultScreen(
     LaunchedEffect(initialFile) {
         initialFile?.let {
             if (it.exists()) {
-                currentPath = it.parentFile ?: viewModel.getRootDir()
-                highlightedFile = it
+                if (it.isDirectory) {
+                    currentPath = it
+                    highlightedFile = null
+                } else {
+                    currentPath = it.parentFile ?: viewModel.getRootDir()
+                    highlightedFile = it
+                }
                 isDashboard = false
                 viewMode = FileViewMode.GRID
                 searchQuery = ""
@@ -175,6 +182,10 @@ fun FileVaultScreen(
     var fileToRename by remember { mutableStateOf<File?>(null) }
     var renameValue by remember { mutableStateOf("") }
     var fileToDelete by remember { mutableStateOf<File?>(null) }
+    
+    var clipboardFiles by remember { mutableStateOf<Set<File>>(emptySet()) }
+    var isClipboardMove by remember { mutableStateOf(false) }
+    var fileToDetails by remember { mutableStateOf<File?>(null) }
 
     BackHandler(enabled = editingFile != null || viewingProfile != null || isSearchExpanded || isSelectionMode || activeCategoryLabel != null || !isDashboard) {
         if (isSelectionMode) {
@@ -329,6 +340,20 @@ fun FileVaultScreen(
                     },
                     actions = {
                         IconButton(onClick = { 
+                            clipboardFiles = selectedFiles
+                            isClipboardMove = false
+                            selectedFiles = emptySet()
+                        }) {
+                            Icon(Icons.Default.ContentCopy, null)
+                        }
+                        IconButton(onClick = { 
+                            clipboardFiles = selectedFiles
+                            isClipboardMove = true
+                            selectedFiles = emptySet()
+                        }) {
+                            Icon(Icons.Default.ContentCut, null)
+                        }
+                        IconButton(onClick = { 
                             selectedFiles.forEach { if (it.isDirectory) it.deleteRecursively() else it.delete() }
                             selectedFiles = emptySet()
                             currentPath = File(currentPath.absolutePath)
@@ -381,11 +406,25 @@ fun FileVaultScreen(
                         activeCategoryLabel = null
                         searchQuery = ""
                     },
-                    onPathEdit = { newPath ->
-                        val f = File(newPath)
-                        if (f.exists() && f.isDirectory) {
-                            currentPath = f
-                            isDashboard = false
+                    onPathEdit = { newVirtualPath ->
+                        val targetFile = if (newVirtualPath == "/" || newVirtualPath.isBlank()) {
+                            viewModel.getRootDir()
+                        } else if (newVirtualPath.startsWith("linkthing://drive?path=")) {
+                            val path = newVirtualPath.removePrefix("linkthing://drive?path=")
+                            File(viewModel.getRootDir(), path)
+                        } else {
+                            val cleanPath = newVirtualPath.trim().removePrefix("/")
+                            File(viewModel.getRootDir(), cleanPath)
+                        }
+                        
+                        if (targetFile.exists()) {
+                            if (targetFile.isDirectory) {
+                                currentPath = targetFile
+                                isDashboard = false
+                            } else {
+                                handleFileClick(targetFile, context, viewModel, { currentPath = it }, { editingFile = it })
+                                isDashboard = false
+                            }
                         } else {
                             val msg = context.getString(R.string.invalid_path)
                             android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
@@ -420,8 +459,33 @@ fun FileVaultScreen(
                             if (msg != null) onShowInChat(msg)
                         }
                     },
-                    syncStatus = viewModel.syncStatus.collectAsState().value,
+                    syncStatus = viewModel.syncStatus.collectAsStateWithLifecycle().value,
                     onSyncClick = { viewModel.forceSync() },
+                    onPaste = {
+                        scope.launch {
+                            try {
+                                clipboardFiles.forEach { source ->
+                                    val dest = File(currentPath, source.name)
+                                    if (isClipboardMove) {
+                                        source.renameTo(dest)
+                                    } else {
+                                        if (source.isDirectory) source.copyRecursively(dest, overwrite = true)
+                                        else source.copyTo(dest, overwrite = true)
+                                    }
+                                }
+                                if (isClipboardMove) clipboardFiles = emptySet()
+                                currentPath = File(currentPath.absolutePath)
+                                android.widget.Toast.makeText(context, "Operazione completata", android.widget.Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                android.widget.Toast.makeText(context, "Errore durante l'operazione", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    hasClipboard = clipboardFiles.isNotEmpty(),
+                    showExtensions = showExtensions,
+                    onToggleExtensions = { showExtensions = !showExtensions },
+                    onToggleView = { viewMode = if (viewMode == FileViewMode.GRID) FileViewMode.LIST else FileViewMode.GRID },
+                    onSort = { sortMode = it },
                     onShowId = { viewModel.showMyId() },
                     onOpenWebGui = { viewModel.openWebGui() },
                     onOpenChess = {
@@ -458,6 +522,9 @@ fun FileVaultScreen(
             AnimatedContent(
                 targetState = if (editingFile != null) "EDITOR" to editingFile else if (isDashboard) "DASHBOARD" to null else "BROWSER" to null,
                 transitionSpec = {
+                    if (!DevicePerformance.useHeavyAnimations) {
+                        return@AnimatedContent fadeIn() togetherWith fadeOut()
+                    }
                     val ease = FastOutSlowInEasing
                     if (targetState.first == "EDITOR") {
                         (slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Up, animationSpec = tween(350, easing = ease)) + fadeIn(tween(350))).togetherWith(
@@ -530,7 +597,8 @@ fun FileVaultScreen(
                             searchQuery = searchQuery,
                             onSearchUpdate = { searchQuery = it },
                             onCommSubFilterUpdate = { commSubFilter = it },
-                            onMediaSubFilterUpdate = { mediaSubFilter = it }
+                            onMediaSubFilterUpdate = { mediaSubFilter = it },
+                            showExtensions = showExtensions
                         )
                     }
                     "BROWSER" -> {
@@ -616,7 +684,7 @@ fun FileVaultScreen(
                                 when (browserState) {
                                     "NET" -> {
                                         LazyColumn(modifier = Modifier.fillMaxSize()) {
-                                            item {
+                                            item(contentType = "topology") {
                                                 Box(modifier = Modifier.height(400.dp).fillMaxWidth()) {
                                                     NetworkGraphView(
                                                         viewModel = viewModel, 
@@ -625,13 +693,17 @@ fun FileVaultScreen(
                                                     )
                                                 }
                                             }
-                                            item {
+                                            item(contentType = "explanation") {
                                                 CliqueExplanationBanner()
                                             }
-                                            item {
+                                            item(contentType = LinkThingContentTypes.DATE_HEADER) {
                                                 SectionHeader("File di Rete (.net)")
                                             }
-                                            items(filteredFiles, key = { it.absolutePath }) { file ->
+                                            items(
+                                                filteredFiles, 
+                                                key = { it.absolutePath },
+                                                contentType = { LinkThingContentTypes.ATTACHMENT }
+                                            ) { file ->
                                                 val isSelected = selectedFiles.contains(file)
                                                 val isHighlighted = highlightedFile?.absolutePath == file.absolutePath
                                                 FileVaultItem(
@@ -639,6 +711,7 @@ fun FileVaultScreen(
                                                     viewMode = FileViewMode.LIST,
                                                     highlighted = isHighlighted,
                                                     selected = isSelected,
+                                                    showExtension = showExtensions,
                                                     onTap = { 
                                                         if (isSelectionMode) {
                                                             selectedFiles = if (isSelected) selectedFiles - file else selectedFiles + file
@@ -659,7 +732,8 @@ fun FileVaultScreen(
                                                             val errorMsg = context.getString(R.string.message_not_found)
                                                             android.widget.Toast.makeText(context, errorMsg, android.widget.Toast.LENGTH_SHORT).show()
                                                         }
-                                                    }
+                                                    },
+                                                    rootDir = viewModel.getRootDir()
                                                 )
                                             }
                                             item {
@@ -692,7 +766,7 @@ fun FileVaultScreen(
                                             contentPadding = PaddingValues(16.dp),
                                             verticalArrangement = Arrangement.spacedBy(12.dp)
                                         ) {
-                                            item {
+                                            item(contentType = LinkThingContentTypes.DATE_HEADER) {
                                                 Text(
                                                     "Identità verificate",
                                                     style = MaterialTheme.typography.titleSmall,
@@ -700,7 +774,11 @@ fun FileVaultScreen(
                                                     modifier = Modifier.padding(bottom = 8.dp)
                                                 )
                                             }
-                                            items(uniqueIdentities, key = { it.second.deviceId }) { (file, profile) ->
+                                            items(
+                                                uniqueIdentities, 
+                                                key = { it.second.deviceId },
+                                                contentType = { "profile" }
+                                            ) { (file, profile) ->
                                                 RubricaCard(
                                                     file = file,
                                                     onClick = { viewingProfile = profile },
@@ -725,7 +803,11 @@ fun FileVaultScreen(
                                                 modifier = Modifier.fillMaxSize(),
                                                 contentPadding = PaddingValues(8.dp)
                                             ) {
-                                                items(filteredFiles, key = { it.absolutePath }) { file ->
+                                                items(
+                                                    filteredFiles, 
+                                                    key = { it.absolutePath },
+                                                    contentType = { if (it.isDirectory) "folder" else LinkThingContentTypes.ATTACHMENT }
+                                                ) { file ->
                                                     val isSelected = selectedFiles.contains(file)
                                                     val isHighlighted = highlightedFile?.absolutePath == file.absolutePath
                                                     FileVaultItem(
@@ -733,6 +815,7 @@ fun FileVaultScreen(
                                                         viewMode = FileViewMode.GRID,
                                                         highlighted = isHighlighted,
                                                         selected = isSelected,
+                                                        showExtension = showExtensions,
                                                         onTap = { 
                                                             if (isSelectionMode) {
                                                                 selectedFiles = if (isSelected) selectedFiles - file else selectedFiles + file
@@ -753,13 +836,18 @@ fun FileVaultScreen(
                                                                 val errorMsg = context.getString(R.string.message_not_found)
                                                                 android.widget.Toast.makeText(context, errorMsg, android.widget.Toast.LENGTH_SHORT).show()
                                                             }
-                                                        }
+                                                        },
+                                                        rootDir = viewModel.getRootDir()
                                                     )
                                                 }
                                             }
                                         } else {
                                             LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
-                                                items(filteredFiles) { file ->
+                                                items(
+                                                    filteredFiles,
+                                                    key = { it.absolutePath },
+                                                    contentType = { if (it.isDirectory) "folder" else LinkThingContentTypes.ATTACHMENT }
+                                                ) { file ->
                                                     val isSelected = selectedFiles.contains(file)
                                                     val isHighlighted = highlightedFile?.absolutePath == file.absolutePath
                                                     FileVaultItem(
@@ -767,6 +855,7 @@ fun FileVaultScreen(
                                                         viewMode = FileViewMode.LIST,
                                                         highlighted = isHighlighted,
                                                         selected = isSelected,
+                                                        showExtension = showExtensions,
                                                         onTap = { 
                                                             if (isSelectionMode) {
                                                                 selectedFiles = if (isSelected) selectedFiles - file else selectedFiles + file
@@ -787,7 +876,8 @@ fun FileVaultScreen(
                                                                 val errorMsg = context.getString(R.string.message_not_found)
                                                                 android.widget.Toast.makeText(context, errorMsg, android.widget.Toast.LENGTH_SHORT).show()
                                                             }
-                                                        }
+                                                        },
+                                                        rootDir = viewModel.getRootDir()
                                                     )
                                                 }
                                             }
@@ -991,8 +1081,8 @@ fun FileVaultScreen(
 
     if (selectedDeviceForDetails != null) {
         val deviceId = selectedDeviceForDetails!!
-        val device = friends.find { it.deviceID == deviceId } ?: if (deviceId == viewModel.getLocalDeviceId()) viewModel.localDevice.collectAsState().value else null
-        val profile = viewModel.friendProfiles.collectAsState().value[deviceId] ?: if (deviceId == viewModel.getLocalDeviceId()) viewModel.userProfile.collectAsState().value else null
+        val device = friends.find { it.deviceID == deviceId } ?: if (deviceId == viewModel.getLocalDeviceId()) viewModel.localDevice.collectAsStateWithLifecycle().value else null
+        val profile = viewModel.friendProfiles.collectAsStateWithLifecycle().value[deviceId] ?: if (deviceId == viewModel.getLocalDeviceId()) viewModel.userProfile.collectAsStateWithLifecycle().value else null
         
         val qrBitmap = remember(deviceId) {
             try {
@@ -1092,12 +1182,38 @@ fun FileVaultTopBar(
     onShowEditorInChat: () -> Unit = {},
     syncStatus: String = "",
     onSyncClick: () -> Unit = {},
+    onPaste: () -> Unit = {},
+    hasClipboard: Boolean = false,
+    showExtensions: Boolean = true,
+    onToggleExtensions: () -> Unit = {},
+    onToggleView: () -> Unit = {},
+    onSort: (FileSortMode) -> Unit = {},
     onShowId: () -> Unit = {},
     onOpenWebGui: () -> Unit = {},
     onOpenChess: () -> Unit = {}
 ) {
     var isPathEditing by remember { mutableStateOf(false) }
-    var editedPath by remember { mutableStateOf(currentPath.absolutePath) }
+    
+    val displayPath = remember(currentPath, rootDir) {
+        val absoluteRoot = rootDir.absolutePath
+        val absoluteCurrent = currentPath.absolutePath
+        if (absoluteCurrent == absoluteRoot) {
+            "/"
+        } else if (absoluteCurrent.startsWith(absoluteRoot)) {
+            absoluteCurrent.substring(absoluteRoot.length).replace(File.separator, "/")
+        } else {
+            // Fallback for paths outside root if any
+            absoluteCurrent
+        }
+    }
+
+    var editedPath by remember { mutableStateOf(displayPath) }
+    
+    // Update editedPath when path changes externally
+    LaunchedEffect(displayPath) {
+        editedPath = displayPath
+    }
+
     var showMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
@@ -1178,30 +1294,40 @@ fun FileVaultTopBar(
                     }
                 )
             } else if (isPathEditing) {
-                TopAppBar(
-                    title = {
-                        TextField(
-                            value = editedPath,
-                            onValueChange = { editedPath = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            trailingIcon = {
-                                IconButton(onClick = { 
-                                    onPathEdit(editedPath)
-                                    isPathEditing = false 
-                                }) {
-                                    Icon(Icons.Default.Check, null)
-                                }
-                            },
-                            colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent)
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = { isPathEditing = false }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, null)
+                    TopAppBar(
+                        title = {
+                            TextField(
+                                value = editedPath,
+                                onValueChange = { editedPath = it },
+                                modifier = Modifier.fillMaxWidth().height(56.dp),
+                                singleLine = true,
+                                textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                                placeholder = { Text("Inserisci percorso virtuale...") },
+                                trailingIcon = {
+                                    Row {
+                                        IconButton(onClick = { 
+                                            onPathEdit(editedPath)
+                                            isPathEditing = false 
+                                        }) {
+                                            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary)
+                                        }
+                                        IconButton(onClick = { isPathEditing = false }) {
+                                            Icon(Icons.Default.Close, null)
+                                        }
+                                    }
+                                },
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    cursorColor = MaterialTheme.colorScheme.primary,
+                                    focusedIndicatorColor = MaterialTheme.colorScheme.primary
+                                )
+                            )
+                        },
+                        navigationIcon = {
+                            Icon(Icons.Default.Edit, null, modifier = Modifier.padding(start = 12.dp).size(20.dp), tint = MaterialTheme.colorScheme.primary)
                         }
-                    }
-                )
+                    )
             } else {
                 Row(
                     modifier = Modifier
@@ -1241,69 +1367,31 @@ fun FileVaultTopBar(
                     Row(
                         modifier = Modifier
                             .weight(1f)
-                            .horizontalScroll(rememberScrollState()),
+                            .padding(horizontal = 4.dp)
+                            .height(40.dp)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .clickable { isPathEditing = true }
+                            .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val pathParts = remember(currentPath, rootDir) {
-                            val rootPath = rootDir.absolutePath
-                            val current = currentPath.absolutePath
-                            if (current == rootPath) emptyList()
-                            else if (current.startsWith(rootPath)) {
-                                current.removePrefix(rootPath).split(File.separator).filter { it.isNotBlank() }
-                            } else {
-                                current.split(File.separator).filter { it.isNotBlank() }
-                            }
-                        }
-                        
-                        InputChip(
-                            selected = currentPath == rootDir,
-                            onClick = { onNavigateTo(rootDir) },
-                            label = { Text("Vault") },
-                            leadingIcon = { Icon(Icons.Default.FolderZip, null, modifier = Modifier.size(16.dp)) },
-                            border = null,
-                            colors = InputChipDefaults.inputChipColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
+                        Icon(
+                            Icons.Default.FolderOpen,
+                            null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.primary
                         )
-                        
-                        var accumulatedPath = rootDir
-                        pathParts.forEach { part ->
-                            accumulatedPath = File(accumulatedPath, part)
-                            val thisPath = accumulatedPath
-                            
-                            Icon(Icons.AutoMirrored.Filled.NavigateNext, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.outline)
-                            
-                            InputChip(
-                                selected = currentPath == thisPath,
-                                onClick = { onNavigateTo(thisPath) },
-                                label = { Text(part) },
-                                border = null,
-                                colors = InputChipDefaults.inputChipColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            )
-                        }
-
-                        if (activeCategoryLabel != null) {
-                            Icon(Icons.AutoMirrored.Filled.NavigateNext, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.outline)
-                            InputChip(
-                                selected = true,
-                                onClick = onClearCategory,
-                                label = { Text(activeCategoryLabel) },
-                                trailingIcon = { Icon(Icons.Default.Close, null, modifier = Modifier.size(12.dp)) },
-                                border = null,
-                                colors = InputChipDefaults.inputChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                                    selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer
-                                )
-                            )
-                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = displayPath,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
                     }
                     
                     IconButton(onClick = { onSearchExpandedChange(true) }, modifier = Modifier.size(32.dp)) {
@@ -1314,6 +1402,12 @@ fun FileVaultTopBar(
                         Icon(Icons.Default.Sync, null, modifier = Modifier.size(20.dp))
                     }
 
+                    if (hasClipboard) {
+                        IconButton(onClick = onPaste, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.ContentPaste, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+
                     Box {
                         IconButton(onClick = { showMenu = true }, modifier = Modifier.size(32.dp)) {
                             Icon(Icons.Default.MoreVert, null, modifier = Modifier.size(20.dp))
@@ -1322,6 +1416,39 @@ fun FileVaultTopBar(
                             expanded = showMenu,
                             onDismissRequest = { showMenu = false }
                         ) {
+                            DropdownMenuItem(
+                                text = { Text(if (viewMode == FileViewMode.GRID) "Visualizza Elenco" else "Visualizza Griglia") },
+                                onClick = {
+                                    showMenu = false
+                                    onToggleView()
+                                },
+                                leadingIcon = { Icon(if (viewMode == FileViewMode.GRID) Icons.AutoMirrored.Filled.List else Icons.Default.GridView, null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (showExtensions) "Nascondi estensioni" else "Mostra estensioni") },
+                                onClick = {
+                                    showMenu = false
+                                    onToggleExtensions()
+                                },
+                                leadingIcon = { Icon(Icons.Default.Settings, null) }
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Ordina per Nome") },
+                                onClick = { onSort(FileSortMode.NAME_ASC); showMenu = false },
+                                leadingIcon = { Icon(Icons.Default.SortByAlpha, null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Ordina per Data") },
+                                onClick = { onSort(FileSortMode.DATE_DESC); showMenu = false },
+                                leadingIcon = { Icon(Icons.Default.Schedule, null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Ordina per Tipo") },
+                                onClick = { onSort(FileSortMode.TYPE); showMenu = false },
+                                leadingIcon = { Icon(Icons.Default.Category, null) }
+                            )
+                            HorizontalDivider()
                             DropdownMenuItem(
                                 text = { Text("Il mio ID (QR)") },
                                 onClick = {
@@ -1370,174 +1497,221 @@ fun FileVaultDashboard(
     searchQuery: String,
     onSearchUpdate: (String) -> Unit,
     onCommSubFilterUpdate: (String) -> Unit,
-    onMediaSubFilterUpdate: (String) -> Unit
+    onMediaSubFilterUpdate: (String) -> Unit,
+    showExtensions: Boolean = true
 ) {
-    val stats = remember(rootDir) {
-        val allFiles = rootDir.walkTopDown().filter { it.isFile }.toList()
-        val special = listOf("msg", "ack", "net", "info")
+    val allFilesOnDisk = remember(rootDir) {
+        rootDir.walkTopDown().filter { it.isFile }.toList()
+    }
+    
+    val stats = remember(allFilesOnDisk) {
+        val special = listOf("msg", "ack", "net", "info", "mail")
+        val imageExts = listOf("jpg", "jpeg", "png", "webp", "gif", "bmp")
+        val videoExts = listOf("mp4", "mkv", "mov", "avi", "wmv", "flv")
+        val audioExts = listOf("mp3", "wav", "ogg", "m4a", "flac", "aac")
+        val docExts = listOf("pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "md")
+
         mapOf(
-            "Messages" to allFiles.count { file -> 
-                file.extension.lowercase() == "msg" && file.name.split("_").size < 4 
-            },
-            "Replies" to allFiles.count { file -> 
-                file.extension.lowercase() == "msg" && file.name.split("_").size >= 4 
-            },
-            "Network" to allFiles.count { it.extension.lowercase() == "net" },
-            "Acks" to allFiles.count { it.extension.lowercase() == "ack" },
-            "Media" to allFiles.count { it.extension.lowercase() !in special },
-            "Profiles" to allFiles.count { it.extension.lowercase() == "info" }
+            "Messages" to allFilesOnDisk.count { it.extension.lowercase() == "msg" || it.extension.lowercase() == "mail" },
+            "Network" to allFilesOnDisk.count { it.extension.lowercase() == "net" },
+            "Profiles" to allFilesOnDisk.count { it.extension.lowercase() == "info" },
+            "Images" to allFilesOnDisk.count { it.extension.lowercase() in imageExts },
+            "Videos" to allFilesOnDisk.count { it.extension.lowercase() in videoExts },
+            "Music" to allFilesOnDisk.count { it.extension.lowercase() in audioExts },
+            "Docs" to allFilesOnDisk.count { it.extension.lowercase() in docExts },
+            "Other" to allFilesOnDisk.count { 
+                val ext = it.extension.lowercase()
+                ext !in special && ext !in imageExts && ext !in videoExts && ext !in audioExts && ext !in docExts
+            }
         )
     }
 
     val labelComm = stringResource(R.string.category_messages)
     val labelNet = stringResource(R.string.category_network)
-    val labelMedia = stringResource(R.string.category_media)
     val labelProfile = stringResource(R.string.category_profiles)
+    val labelMedia = stringResource(R.string.category_media)
     
-    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+        // Top ES Style Section: Storage Summary
         Column(modifier = Modifier.padding(16.dp)) {
-            val commCount = (stats["Messages"] ?: 0) + (stats["Replies"] ?: 0) + (stats["Acks"] ?: 0)
-            
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                CategoryItem(
-                    icon = Icons.AutoMirrored.Filled.Message, 
-                    label = labelComm, 
-                    count = commCount, 
-                    color = Color(0xFF2196F3), 
-                    modifier = Modifier.weight(1f)
-                ) { 
-                    onCategoryUpdate(labelComm)
-                    onCommSubFilterUpdate("All")
+            val vaultSize = remember(allFilesOnDisk) { allFilesOnDisk.sumOf { it.length() } }
+            val totalSpace = rootDir.totalSpace
+            val progress = if (totalSpace > 0) vaultSize.toFloat() / totalSpace else 0f
+            val percent = (progress * 100).toInt()
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Circle Progress like ES
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(80.dp)) {
+                    CircularProgressIndicator(
+                        progress = { 1f },
+                        modifier = Modifier.size(80.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        strokeWidth = 6.dp
+                    )
+                    CircularProgressIndicator(
+                        progress = { progress.coerceAtLeast(0.01f) },
+                        modifier = Modifier.size(80.dp),
+                        color = Color(0xFF2196F3),
+                        strokeWidth = 6.dp
+                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("$percent%", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("Used", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                    }
                 }
-                CategoryItem(Icons.Default.Lan, labelNet, stats["Network"] ?: 0, Color(0xFF4CAF50), Modifier.weight(1f)) { 
-                    onCategoryUpdate(labelNet)
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                CategoryItem(Icons.Default.PermMedia, labelMedia, stats["Media"] ?: 0, Color(0xFF9C27B0), Modifier.weight(1f)) { 
-                    onCategoryUpdate(labelMedia)
-                    onCommSubFilterUpdate("All")
-                    onMediaSubFilterUpdate("All")
-                    onSearchUpdate("-msg -ack -net -info")
-                }
-                CategoryItem(Icons.Default.AccountCircle, labelProfile, stats["Profiles"] ?: 0, Color(0xFF795548), Modifier.weight(1f)) { 
-                    onCategoryUpdate(labelProfile)
+
+                Spacer(modifier = Modifier.width(20.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Internal Storage", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "${formatSize(vaultSize)} / ${formatSize(totalSpace)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
                 }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
-            
-            Card(
-                modifier = Modifier.fillMaxWidth(), 
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-                shape = RoundedCornerShape(16.dp)
+
+            // ES Library Icons Grid (4 columns)
+            val libraryItems = listOf(
+                LibraryItemData(Icons.Default.Image, "Images", Color(0xFF4CAF50), stats["Images"] ?: 0) {
+                    onCategoryUpdate(labelMedia)
+                    onSearchUpdate(".jpg .jpeg .png .webp .gif .bmp")
+                },
+                LibraryItemData(Icons.Default.Movie, "Videos", Color(0xFFFF9800), stats["Videos"] ?: 0) {
+                    onCategoryUpdate(labelMedia)
+                    onSearchUpdate(".mp4 .mkv .mov .avi .wmv .flv")
+                },
+                LibraryItemData(Icons.Default.MusicNote, "Music", Color(0xFFE91E63), stats["Music"] ?: 0) {
+                    onCategoryUpdate(labelMedia)
+                    onSearchUpdate(".mp3 .wav .ogg .m4a .flac .aac")
+                },
+                LibraryItemData(Icons.Default.Description, "Docs", Color(0xFF2196F3), stats["Docs"] ?: 0) {
+                    onCategoryUpdate(labelMedia)
+                    onSearchUpdate(".pdf .doc .docx .xls .xlsx .ppt .pptx .txt .md")
+                },
+                LibraryItemData(Icons.AutoMirrored.Filled.Message, "Chat", Color(0xFF00BCD4), stats["Messages"] ?: 0) {
+                    onCategoryUpdate(labelComm)
+                },
+                LibraryItemData(Icons.Default.Lan, "Network", Color(0xFF9C27B0), stats["Network"] ?: 0) {
+                    onCategoryUpdate(labelNet)
+                },
+                LibraryItemData(Icons.Default.AccountCircle, "Profiles", Color(0xFF795548), stats["Profiles"] ?: 0) {
+                    onCategoryUpdate(labelProfile)
+                },
+                LibraryItemData(Icons.Default.Folder, "Other", Color(0xFF607D8B), stats["Other"] ?: 0) {
+                    onCategoryUpdate(labelMedia)
+                    onSearchUpdate("-msg -ack -net -info -mail -jpg -jpeg -png -webp -gif -bmp -mp4 -mkv -mov -avi -wmv -flv -mp3 -wav -ogg -m4a -flac -aac -pdf -doc -docx -xls -xlsx -ppt -pptx -txt -md")
+                }
+            )
+
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(4),
+                modifier = Modifier.height(180.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                userScrollEnabled = false
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Storage, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(stringResource(R.string.vault_occupancy), style = MaterialTheme.typography.titleSmall)
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
-                    val vaultSize = remember(rootDir) {
-                        rootDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-                    }
-                    val totalSpace = rootDir.totalSpace
-                    val progress = if (totalSpace > 0) vaultSize.toFloat() / totalSpace else 0f
-                    
-                    LinearProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier.fillMaxWidth().height(10.dp).clip(CircleShape),
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(formatSize(vaultSize), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                        val percent = (progress * 100).toInt()
-                        Text("$percent% usato", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                items(libraryItems) { item ->
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clickable(onClick = item.onClick)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = item.color.copy(alpha = 0.1f),
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(item.icon, null, tint = item.color, modifier = Modifier.size(24.dp))
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(item.label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                        Text(item.count.toString(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline, fontSize = 10.sp)
                     }
                 }
             }
         }
 
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            tonalElevation = 1.dp
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                FileVaultListHeader(
-                    currentPath = rootDir,
-                    rootDir = rootDir,
-                    viewMode = viewMode,
-                    onToggleView = onToggleView,
-                    sortMode = sortMode,
-                    onSort = onSort,
-                    title = stringResource(R.string.all_files),
-                    showGoUp = false
-                )
+        // ES Bottom Section: "Device" folders
+        HorizontalDivider(thickness = 8.dp, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
 
-                val allFiles = remember(rootDir, sortMode) {
-                    rootDir.listFiles()?.sortedWith { f1, f2 ->
-                        if (f1.isDirectory && !f2.isDirectory) return@sortedWith -1
-                        if (!f1.isDirectory && f2.isDirectory) return@sortedWith 1
-                        when (sortMode) {
-                            FileSortMode.TYPE -> compareBy<File>({ it.extension.lowercase() }, { it.name.lowercase() }).compare(f1, f2)
-                            FileSortMode.NAME_ASC -> f1.name.lowercase().compareTo(f2.name.lowercase())
-                            FileSortMode.NAME_DESC -> f2.name.lowercase().compareTo(f1.name.lowercase())
-                            FileSortMode.DATE_ASC -> f1.lastModified().compareTo(f2.lastModified())
-                            FileSortMode.DATE_DESC -> f2.lastModified().compareTo(f1.lastModified())
-                            FileSortMode.SIZE_ASC -> f1.length().compareTo(f2.length())
-                            FileSortMode.SIZE_DESC -> f2.length().compareTo(f1.length())
-                        }
-                    } ?: emptyList()
-                }
-                
-                if (allFiles.isEmpty()) {
-                    Text(
-                        "Nessun file nel root", 
-                        modifier = Modifier.padding(vertical = 32.dp).fillMaxWidth(),
-                        textAlign = TextAlign.Center,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                }
+        Column(modifier = Modifier.weight(1f).padding(horizontal = 16.dp)) {
+            FileVaultListHeader(
+                currentPath = rootDir,
+                rootDir = rootDir,
+                viewMode = viewMode,
+                onToggleView = onToggleView,
+                sortMode = sortMode,
+                onSort = onSort,
+                title = "Local Files",
+                showGoUp = false
+            )
 
+            val allFiles = remember(rootDir, sortMode) {
+                rootDir.listFiles()?.sortedWith { f1, f2 ->
+                    if (f1.isDirectory && !f2.isDirectory) return@sortedWith -1
+                    if (!f1.isDirectory && f2.isDirectory) return@sortedWith 1
+                    when (sortMode) {
+                        FileSortMode.TYPE -> compareBy<File>({ it.extension.lowercase() }, { it.name.lowercase() }).compare(f1, f2)
+                        FileSortMode.NAME_ASC -> f1.name.lowercase().compareTo(f2.name.lowercase())
+                        FileSortMode.NAME_DESC -> f2.name.lowercase().compareTo(f1.name.lowercase())
+                        FileSortMode.DATE_ASC -> f1.lastModified().compareTo(f2.lastModified())
+                        FileSortMode.DATE_DESC -> f2.lastModified().compareTo(f1.lastModified())
+                        FileSortMode.SIZE_ASC -> f1.length().compareTo(f2.length())
+                        FileSortMode.SIZE_DESC -> f2.length().compareTo(f1.length())
+                    }
+                } ?: emptyList()
+            }
+            
+            if (allFiles.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Empty folder", color = MaterialTheme.colorScheme.outline)
+                }
+            } else {
                 if (viewMode == FileViewMode.GRID) {
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Start
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 85.dp),
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        allFiles.forEach { file ->
-                            Box(modifier = Modifier.fillMaxWidth(0.25f)) {
-                                val context = LocalContext.current
-                                FileVaultItem(
-                                    file = file,
-                                    viewMode = FileViewMode.GRID,
-                                    onTap = { handleFileClick(file, context, viewModel, onOpenPath, onEditFile) },
-                                    onRename = {}, 
-                                    onDelete = {},
-                                    onShowInChat = {}
-                                )
-                            }
+                        items(allFiles) { file ->
+                            val context = LocalContext.current
+                            FileVaultItem(
+                                file = file,
+                                viewMode = FileViewMode.GRID,
+                                showExtension = showExtensions,
+                                onTap = { handleFileClick(file, context, viewModel, onOpenPath, onEditFile) },
+                                onRename = {}, 
+                                onDelete = {},
+                                onShowInChat = {},
+                                rootDir = rootDir
+                            )
                         }
                     }
                 } else {
-                    allFiles.forEach { file ->
-                        val context = LocalContext.current
-                        FileVaultItem(
-                            file = file,
-                            viewMode = FileViewMode.LIST,
-                            onTap = { handleFileClick(file, context, viewModel, onOpenPath, onEditFile) },
-                            onRename = {}, 
-                            onDelete = {},
-                            onShowInChat = {}
-                        )
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(allFiles) { file ->
+                            val context = LocalContext.current
+                            FileVaultItem(
+                                file = file,
+                                viewMode = FileViewMode.LIST,
+                                showExtension = showExtensions,
+                                onTap = { handleFileClick(file, context, viewModel, onOpenPath, onEditFile) },
+                                onRename = {}, 
+                                onDelete = {},
+                                onShowInChat = {},
+                                rootDir = rootDir
+                            )
+                        }
                     }
                 }
             }
@@ -1545,6 +1719,13 @@ fun FileVaultDashboard(
     }
 }
 
+data class LibraryItemData(
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val label: String,
+    val color: Color,
+    val count: Int,
+    val onClick: () -> Unit
+)
 @Composable
 fun FileVaultListHeader(
     currentPath: File,
@@ -1684,11 +1865,13 @@ fun FileVaultItem(
     viewMode: FileViewMode,
     highlighted: Boolean = false,
     selected: Boolean = false,
+    showExtension: Boolean = true,
     onTap: () -> Unit, 
     onLongClick: () -> Unit = {},
     onRename: (File) -> Unit,
     onDelete: (File) -> Unit,
-    onShowInChat: (File) -> Unit
+    onShowInChat: (File) -> Unit,
+    rootDir: File? = null
 ) {
     val context = LocalContext.current
     var showContextMenu by remember { mutableStateOf(false) }
@@ -1771,8 +1954,12 @@ fun FileVaultItem(
                 }
                 
                 Spacer(modifier = Modifier.height(8.dp))
+                val displayName = remember(file.name, showExtension) {
+                    if (showExtension || file.isDirectory) file.name 
+                    else file.name.substringBeforeLast(".", file.name)
+                }
                 Text(
-                    text = file.name,
+                    text = displayName,
                     style = MaterialTheme.typography.labelMedium,
                     textAlign = TextAlign.Center,
                     maxLines = 2,
@@ -1793,8 +1980,12 @@ fun FileVaultItem(
                     }
                 ),
                 headlineContent = { 
+                    val displayName = remember(file.name, showExtension) {
+                        if (showExtension || file.isDirectory) file.name 
+                        else file.name.substringBeforeLast(".", file.name)
+                    }
                     Text(
-                        file.name, 
+                        displayName,
                         maxLines = 1, 
                         overflow = TextOverflow.Ellipsis,
                         fontWeight = if (file.isDirectory) FontWeight.Medium else FontWeight.Normal
@@ -1850,6 +2041,23 @@ fun FileVaultItem(
                     onRename(file)
                 },
                 leadingIcon = { Icon(Icons.Default.Edit, null) }
+            )
+            DropdownMenuItem(
+                text = { Text("Crea Link") },
+                onClick = {
+                    showContextMenu = false
+                    val virtualPath = if (rootDir != null && file.absolutePath.startsWith(rootDir.absolutePath)) {
+                        file.absolutePath.substring(rootDir.absolutePath.length).replace(File.separator, "/")
+                    } else {
+                        "/" + file.name
+                    }
+                    val link = "linkthing://drive?path=$virtualPath"
+                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    val clip = android.content.ClipData.newPlainText("EtherMesh Link", link)
+                    clipboard.setPrimaryClip(clip)
+                    android.widget.Toast.makeText(context, "Link copiato negli appunti", android.widget.Toast.LENGTH_SHORT).show()
+                },
+                leadingIcon = { Icon(Icons.Default.Link, null) }
             )
             if (!file.isDirectory) {
                 DropdownMenuItem(

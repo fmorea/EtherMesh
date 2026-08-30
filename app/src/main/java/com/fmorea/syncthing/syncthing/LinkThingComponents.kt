@@ -13,6 +13,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
@@ -39,12 +40,33 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.os.Build
 import com.fmorea.syncthing.R
 import com.fmorea.syncthing.model.Device
 import com.fmorea.syncthing.service.Constants
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+
+object LinkThingContentTypes {
+    const val MESSAGE = "message"
+    const val ATTACHMENT = "attachment"
+    const val DATE_HEADER = "date_header"
+    const val DEVICE = "device"
+    const val DISCOVERED_DEVICE = "discovered_device"
+}
+
+// Performance utility for Android Version parameterization
+object DevicePerformance {
+    val isLowEnd: Boolean
+        get() = Build.VERSION.SDK_INT < Build.VERSION_CODES.M // Pre-Marshmallow
+    
+    val useHeavyAnimations: Boolean
+        get() = !isLowEnd
+    
+    val useTranslucency: Boolean
+        get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
+}
 
 // Simple in-memory cache for images to improve scrolling performance
 val imageCacheShared = object : LruCache<String, android.graphics.Bitmap>(
@@ -69,7 +91,7 @@ fun MarkdownText(
     val italicColor = MaterialTheme.colorScheme.secondary
     val codeColor = MaterialTheme.colorScheme.surfaceVariant
 
-    val annotatedString = remember(text) {
+    val annotatedString = remember(text, boldColor, italicColor, codeColor) {
         buildAnnotatedString {
             var i = 0
             while (i < text.length) {
@@ -122,7 +144,7 @@ fun MarkdownText(
 
 @Composable
 fun AsyncImage(file: File, modifier: Modifier, targetSize: Int = 400) {
-    var bitmap by remember { mutableStateOf(imageCacheShared.get(file.absolutePath)) }
+    var bitmap by remember(file.absolutePath) { mutableStateOf(imageCacheShared.get(file.absolutePath)) }
 
     LaunchedEffect(file.absolutePath) {
         if (bitmap == null) {
@@ -151,10 +173,28 @@ fun AsyncImage(file: File, modifier: Modifier, targetSize: Int = 400) {
         }
     }
 
-    Crossfade(targetState = bitmap, animationSpec = tween(500), label = "imageFade") { targetBitmap ->
-        if (targetBitmap != null) {
+    if (DevicePerformance.useHeavyAnimations) {
+        Crossfade(targetState = bitmap, animationSpec = tween(500), label = "imageFade") { targetBitmap ->
+            if (targetBitmap != null) {
+                Image(
+                    bitmap = targetBitmap.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = modifier,
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Box(
+                    modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                }
+            }
+        }
+    } else {
+        if (bitmap != null) {
             Image(
-                bitmap = targetBitmap.asImageBitmap(),
+                bitmap = bitmap!!.asImageBitmap(),
                 contentDescription = null,
                 modifier = modifier,
                 contentScale = ContentScale.Crop
@@ -186,15 +226,18 @@ private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int,
 
 @Composable
 fun Avatar(deviceId: String, profile: UserProfile? = null, size: Int = 32, onClick: () -> Unit = {}) {
-    val initial = (profile?.firstName?.take(1) ?: deviceId.take(1)).uppercase()
+    val initial = remember(profile, deviceId) { (profile?.firstName?.take(1) ?: deviceId.take(1)).uppercase() }
+    val context = LocalContext.current
+    val rootDir = remember(context) { File(context.filesDir, com.fmorea.syncthing.service.Constants.LINKTHING_DIR_NAME) }
+    val discloserId = profile?.discloserId ?: ""
+    val photo = remember(deviceId, discloserId, rootDir) { UserProfile.findPhoto(deviceId, discloserId, rootDir) }
+
     Surface(
         modifier = Modifier.size(size.dp).clickable(onClick = onClick),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f)
+        color = MaterialTheme.colorScheme.secondary.copy(alpha = if (DevicePerformance.useTranslucency) 0.2f else 1.0f)
     ) {
         Box(contentAlignment = Alignment.Center) {
-            val rootDir = File(LocalContext.current.filesDir, com.fmorea.syncthing.service.Constants.LINKTHING_DIR_NAME)
-            val photo = UserProfile.findPhoto(deviceId, profile?.discloserId ?: "", rootDir)
             if (photo != null) {
                 AsyncImageAvatar(file = photo)
             } else {
@@ -277,11 +320,14 @@ fun DeviceItem(
     device: Device,
     isMe: Boolean,
     profile: UserProfile?,
+    myDeviceId: String,
+    allProfiles: List<UserProfile> = emptyList(),
     introducedBy: String?,
     deviceNames: Map<String, String>,
     onDelete: () -> Unit,
     onEditProfile: () -> Unit,
     onViewIdentities: () -> Unit,
+    onVerify: (UserProfile) -> Unit = {},
     onTogglePause: () -> Unit = {}
 ) {
     val isOnline = (device.numConnections ?: 0) > 0
@@ -301,13 +347,49 @@ fun DeviceItem(
     }
 
     val displayName = profile?.getDisplayName() ?: device.getDisplayName()
+    val isVerifiedByMe = profile?.discloserId == myDeviceId
+    
+    val otherConfirmations = remember(profile, allProfiles, myDeviceId) {
+        if (profile == null) 0 else {
+            allProfiles.count { 
+                it.discloserId != myDeviceId && 
+                it.discloserId != device.deviceID && 
+                it.firstName == profile.firstName && 
+                it.lastName == profile.lastName 
+            }
+        }
+    }
 
     ListItem(
         headlineContent = { 
-            Text(
-                displayName,
-                fontWeight = if (isMe) FontWeight.Bold else FontWeight.Normal
-            ) 
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    displayName,
+                    fontWeight = if (isMe) FontWeight.Bold else FontWeight.Normal
+                ) 
+                if (isVerifiedByMe) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        Icons.Default.Verified, 
+                        contentDescription = "Verificata", 
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                } else if (otherConfirmations > 0) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            "Verificata da $otherConfirmations",
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 8.sp
+                        )
+                    }
+                }
+            }
         },
         supportingContent = { 
             Column {
@@ -324,12 +406,24 @@ fun DeviceItem(
                     )
                 }
 
-                Text(
-                    statusText,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = statusColor,
-                    fontWeight = FontWeight.ExtraBold
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        statusText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = statusColor,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    if (!isMe && !isVerifiedByMe && profile != null) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "VERIFICA ORA",
+                            modifier = Modifier.clickable { onVerify(profile) },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Black
+                        )
+                    }
+                }
             }
         },
         leadingContent = { 

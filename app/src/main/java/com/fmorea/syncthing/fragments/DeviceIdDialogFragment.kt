@@ -80,12 +80,22 @@ class DeviceIdDialogFragment : DialogFragment() {
                             qrCode,
                             onCopy = { copyDeviceId(deviceId) },
                             onShare = { shareDeviceId(deviceId) },
+                            onShareLink = { shareDeepLink(deviceId) },
                             isCurrentDevice,
                         )
                     }
                 }
             )
         }
+    }
+
+    private fun shareDeepLink(deviceId: String) {
+        val link = "linkthing://add-friend?id=$deviceId"
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, "Aggiungimi su EtherMesh: $link")
+        }
+        startActivity(Intent.createChooser(shareIntent, "Condividi Link EtherMesh"))
     }
 
     private fun generateQrCode(deviceId: String): Bitmap {

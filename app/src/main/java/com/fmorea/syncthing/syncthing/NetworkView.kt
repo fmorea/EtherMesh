@@ -232,11 +232,14 @@ fun NetworkView(
                     device = device,
                     isMe = false,
                     profile = friendProfiles[device.deviceID],
+                    myDeviceId = localDevice?.deviceID ?: "",
+                    allProfiles = allProfiles[device.deviceID] ?: emptyList(),
                     introducedBy = topology[device.deviceID],
                     deviceNames = deviceNames,
                     onDelete = { showConfirmDelete = device.deviceID },
                     onEditProfile = { onEditFriendProfile(device.deviceID) },
                     onViewIdentities = { viewingIdentitiesForDeviceId = device.deviceID },
+                    onVerify = { viewModel.updateFriendProfile(device.deviceID, it) },
                     onTogglePause = { viewModel.toggleDevicePause(device.deviceID) }
                 )
             }

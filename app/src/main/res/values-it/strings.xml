@@ -168,14 +168,14 @@
   <string name="log_android_title">Vedi Registro Android</string>
   <string name="log_syncthing_title">Vedi Registro EtherMesh</string>
   <string name="share_title">Condividi</string>
-  <string name="share_activity_title">Salva in EtherMesh</string>
-  <string name="save_title">Salva</string>
+  <string name="share_activity_title">Crea link</string>
+  <string name="save_title">Crea</string>
   <string name="cancel_title">Annulla</string>
   <string name="folder_title">Cartella</string>
   <string name="file_name_template">Nuovo file %1$s</string>
   <string name="nothing_share">Nulla da condividere</string>
   <string name="copy_exception">Errore durante la condivisione</string>
-  <string name="copy_progress">Condivisione file…</string>
+  <string name="copy_progress">Creazione link…</string>
   <string name="syncthing_disabled_title">EtherMesh è disabilitato</string>
   <string name="syncthing_disabled_message">Cambiare le preferenze?</string>
   <string name="syncthing_disabled_change_settings">Cambia Impostazioni</string>

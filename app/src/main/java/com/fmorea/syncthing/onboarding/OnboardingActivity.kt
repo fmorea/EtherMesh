@@ -26,6 +26,8 @@ import com.fmorea.syncthing.activities.MainActivity
 import com.fmorea.syncthing.activities.ThemedAppCompatActivity
 import com.fmorea.syncthing.webgui.WebGuiActivity
 import com.fmorea.syncthing.service.Constants
+import com.fmorea.syncthing.syncthing.UserProfile
+import java.io.File
 import com.fmorea.syncthing.service.SyncthingRunnable.ExecutableNotFoundException
 import com.fmorea.syncthing.theme.ApplicationTheme
 import com.fmorea.syncthing.util.ConfigXml
@@ -46,6 +48,7 @@ data class OnboardingUiState(
     val hasNotificationPermission: Boolean = false,
     val hasCameraPermission: Boolean = false,
     val hasConfig: Boolean = false,
+    val hasProfile: Boolean = false,
     val isRunningOnTv: Boolean = false,
     val keyGenerationRunning: Boolean = false,
     val keyGenerationFailed: Boolean = false,
@@ -152,13 +155,16 @@ class OnboardingActivity : ThemedAppCompatActivity() {
         val haveNotificationPermission = haveNotificationPermission()
         val haveCameraPermission = haveCameraPermission()
         val haveConfig = checkForParseableConfig()
+        val myId = prefs.getString(Constants.PREF_LOCAL_DEVICE_ID, "") ?: ""
+        val rootDir = File(filesDir, Constants.LINKTHING_DIR_NAME)
+        val hasProfile = myId.isNotBlank() && UserProfile.exists(myId, rootDir)
 
         // On recreation (e.g. rotation) restore the entire previous UI state so nothing resets,
         // including the page set, which is decided once and must stay stable for the whole flow.
         val savedState = restoreUiState(savedInstanceState)
 
         if (savedState == null) {
-            val shouldSkipToMain = haveNotificationPermission && haveCameraPermission && haveConfig && haveLocationPermission && haveIgnoreDozePermission
+            val shouldSkipToMain = haveNotificationPermission && haveCameraPermission && haveConfig && haveLocationPermission && haveIgnoreDozePermission && hasProfile
             if (shouldSkipToMain) {
                 // minimum requirements met, go to main
                 return startApp()
@@ -172,6 +178,7 @@ class OnboardingActivity : ThemedAppCompatActivity() {
             hasNotificationPermission = haveNotificationPermission,
             hasCameraPermission = haveCameraPermission,
             hasConfig = haveConfig,
+            hasProfile = hasProfile,
             isRunningOnTv = isRunningOnTv,
             // A key-generation coroutine cannot survive recreation, so never restore it as running.
             keyGenerationRunning = false,
@@ -184,12 +191,15 @@ class OnboardingActivity : ThemedAppCompatActivity() {
                 OnboardingPage.NOTIFICATION_PERMISSION.takeUnless { haveNotificationPermission },
                 OnboardingPage.CAMERA_PERMISSION.takeUnless { haveCameraPermission },
                 OnboardingPage.KEY_GENERATION.takeUnless { haveConfig },
+                OnboardingPage.PROFILE_SETUP_NAME.takeUnless { hasProfile },
+                OnboardingPage.PROFILE_SETUP_PHOTO.takeUnless { hasProfile },
             ),
             hasIgnoreDozePermission = haveIgnoreDozePermission,
             hasLocationPermission = haveLocationPermission,
             hasNotificationPermission = haveNotificationPermission,
             hasCameraPermission = haveCameraPermission,
             hasConfig = haveConfig,
+            hasProfile = hasProfile,
             isRunningOnTv = isRunningOnTv,
             keyGenerationStatus = getString(R.string.web_gui_creating_key),
         )
@@ -213,7 +223,6 @@ class OnboardingActivity : ThemedAppCompatActivity() {
                         uiState = uiState,
                         onBack = ::handleBack,
                         onContinue = ::advance,
-                        onFinishOnboarding = ::startApp,
                         onGrantLocationPermission = ::requestLocationPermission,
                         onGrantNotificationPermission = ::requestNotificationPermission,
                         onGrantCameraPermission = ::requestCameraPermission,

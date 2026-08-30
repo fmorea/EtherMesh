@@ -8,6 +8,8 @@ import com.fmorea.syncthing.onboarding.pages.KeyGenerationPage
 import com.fmorea.syncthing.onboarding.pages.LocationPermissionPage
 import com.fmorea.syncthing.onboarding.pages.NotificationPermissionPage
 import com.fmorea.syncthing.onboarding.pages.WelcomePage
+import com.fmorea.syncthing.onboarding.pages.ProfileSetupPage
+import com.fmorea.syncthing.onboarding.pages.ProfilePhotoPage
 
 /**
  * Specifies the type and content of each onboarding page.
@@ -19,6 +21,8 @@ enum class OnboardingPage {
     LOCATION_PERMISSION,
     NOTIFICATION_PERMISSION,
     CAMERA_PERMISSION,
+    PROFILE_SETUP_NAME,
+    PROFILE_SETUP_PHOTO,
     KEY_GENERATION,
 }
 
@@ -33,7 +37,6 @@ fun OnboardingPage(
     requestTvFocus: Boolean,
     onBack: () -> Unit,
     onContinue: () -> Unit,
-    onFinishOnboarding: () -> Unit,
     onGrantLocationPermission: () -> Unit,
     onGrantNotificationPermission: () -> Unit,
     onGrantCameraPermission: () -> Unit,
@@ -84,12 +87,26 @@ fun OnboardingPage(
             onContinue = onContinue,
             onGrantCameraPermission = onGrantCameraPermission,
         )
+        OnboardingPage.PROFILE_SETUP_NAME -> ProfileSetupPage(
+            uiState = uiState,
+            pageIndex = pageIndex,
+            requestTvFocus = requestTvFocus,
+            onBack = onBack,
+            onContinue = onContinue,
+        )
+        OnboardingPage.PROFILE_SETUP_PHOTO -> ProfilePhotoPage(
+            uiState = uiState,
+            pageIndex = pageIndex,
+            requestTvFocus = requestTvFocus,
+            onBack = onBack,
+            onContinue = onContinue,
+        )
         OnboardingPage.KEY_GENERATION -> KeyGenerationPage(
             uiState = uiState,
             pageIndex = pageIndex,
             requestTvFocus = requestTvFocus,
             onBack = onBack,
-            onFinishOnboarding = onFinishOnboarding,
+            onContinue = onContinue,
         )
     }
 }

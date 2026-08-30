@@ -131,13 +131,22 @@ data class UserProfile(
             }
 
             return try {
-                gson.fromJson(file.readText(), UserProfile::class.java).copy(deviceId = dId, discloserId = discId)
+                val profile = gson.fromJson(file.readText(), UserProfile::class.java)
+                profile?.copy(deviceId = dId, discloserId = discId) ?: UserProfile(dId, discId)
             } catch (e: Exception) {
                 UserProfile(dId, discId)
             }
         }
 
+        fun exists(deviceId: String, rootDir: File): Boolean {
+            val file = File(rootDir, "${deviceId}_${deviceId}.INFO")
+            return file.exists()
+        }
+
         fun save(profile: UserProfile, discloserId: String, rootDir: File) {
+            if (!rootDir.exists()) {
+                rootDir.mkdirs()
+            }
             val fileName = "${profile.deviceId}_${discloserId}.INFO"
             val infoFile = File(rootDir, fileName)
             infoFile.writeText(gson.toJson(profile.copy(discloserId = discloserId)))

@@ -220,6 +220,14 @@ fun EditProfileDialog(
                 val shareIntent = Intent.createChooser(sendIntent, null)
                 context.startActivity(shareIntent)
             },
+            onShareLink = {
+                val link = "linkthing://add-friend?id=${profile.deviceId}"
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, "Aggiungimi su EtherMesh: $link")
+                }
+                context.startActivity(Intent.createChooser(shareIntent, "Condividi Link EtherMesh"))
+            },
             isCurrentDevice = isMe
         )
     }

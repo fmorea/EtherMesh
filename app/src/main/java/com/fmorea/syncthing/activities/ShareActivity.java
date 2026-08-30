@@ -112,6 +112,15 @@ public class ShareActivity extends SyncthingActivity
             }
         }
 
+        if (savedFolderId.isEmpty()) {
+            for (int i = 0; i < folders.size(); i++) {
+                if (folders.get(i).id.equals(Constants.LINKTHING_FOLDER_ID)) {
+                    folderIndex = i;
+                    break;
+                }
+            }
+        }
+
         ArrayAdapter<Folder> adapter = new ArrayAdapter<>(
                 this, android.R.layout.simple_spinner_item, folders);
 
@@ -378,6 +387,8 @@ public class ShareActivity extends SyncthingActivity
         return savedSubDirectory;
     }
 
+    private String mLastCreatedLink = null;
+
     private static class CopyFilesTask extends AsyncTask<Void, Void, Boolean> {
         private WeakReference<ShareActivity> refShareActivity;
         private ProgressDialog mProgress;
@@ -413,31 +424,35 @@ public class ShareActivity extends SyncthingActivity
 
             boolean isError = false;
             for (Map.Entry<Uri, String> entry : mFiles.entrySet()) {
-                InputStream inputStream = null;
                 try {
-                    File outFile = new File(mDirectory, entry.getValue());
+                    if (!mDirectory.exists()) {
+                        mDirectory.mkdirs();
+                    }
+                    
+                    String fileName = entry.getValue();
+                    if (!fileName.endsWith(".msg")) {
+                        fileName += ".msg";
+                    }
+                    
+                    File outFile = new File(mDirectory, fileName);
                     if (outFile.isFile() && !mAllowOverwrite) {
                         mIgnored++;
                         continue;
                     }
-                    inputStream = shareActivity.getContentResolver().openInputStream(entry.getKey());
-                    Files.asByteSink(outFile).writeFrom(inputStream);
+                    
+                    String link = "linkthing://drive?path=" + entry.getValue(); // Use original name for path
+                    shareActivity.mLastCreatedLink = link;
+                    String content = "Created link to shared content: " + entry.getKey().toString();
+                    
+                    // LinkThingMessage-like format
+                    String messageData = "LINK\n" + link + "\n" + content;
+                    
+                    Files.asByteSink(outFile).write(messageData.getBytes());
                     mCopied++;
-                } catch (FileNotFoundException e) {
-                    Log.e(TAG, String.format("Can't find input file \"%s\" to copy",
-                            entry.getKey()), e);
-                    isError = true;
                 } catch (IOException e) {
-                    Log.e(TAG, String.format("IO exception during file \"%s\" sharing",
+                    Log.e(TAG, String.format("IO exception during link creation for \"%s\"",
                             entry.getKey()), e);
                     isError = true;
-                } finally {
-                    try {
-                        if (inputStream != null)
-                            inputStream.close();
-                    } catch (IOException e) {
-                        Log.w(TAG, "Exception on input/output stream close", e);
-                    }
                 }
             }
             return isError;
@@ -464,6 +479,14 @@ public class ShareActivity extends SyncthingActivity
                             shareActivity.getResources().getQuantityString(R.plurals.copy_success, mCopied, mCopied,
                                     mFolder.label),
                     Toast.LENGTH_LONG).show();
+
+            if (shareActivity.mLastCreatedLink != null) {
+                android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
+                        shareActivity.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                android.content.ClipData clip = android.content.ClipData.newPlainText("EtherMesh Link", shareActivity.mLastCreatedLink);
+                clipboard.setPrimaryClip(clip);
+                Toast.makeText(shareActivity, "Link copiato negli appunti", Toast.LENGTH_SHORT).show();
+            }
 
             shareActivity.afterCopyFilesTask();
         }

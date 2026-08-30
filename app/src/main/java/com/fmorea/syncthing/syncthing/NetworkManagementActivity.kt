@@ -310,6 +310,8 @@ fun NetworkManagementScreen(
                         device = localDevice!!,
                         isMe = true,
                         profile = userProfile,
+                        myDeviceId = localDevice!!.deviceID,
+                        allProfiles = allProfiles[localDevice!!.deviceID] ?: emptyList(),
                         introducedBy = null,
                         deviceNames = deviceNames,
                         onDelete = {},
@@ -342,11 +344,15 @@ fun NetworkManagementScreen(
                         device = device,
                         isMe = false,
                         profile = friendProfiles[device.deviceID],
+                        myDeviceId = localDevice?.deviceID ?: "",
+                        allProfiles = allProfiles[device.deviceID] ?: emptyList(),
                         introducedBy = topology[device.deviceID],
                         deviceNames = deviceNames,
                         onDelete = { showConfirmDelete = device.deviceID },
                         onEditProfile = { editingProfileForDeviceId = device.deviceID },
-                        onViewIdentities = { viewingIdentitiesForDeviceId = device.deviceID }
+                        onViewIdentities = { viewingIdentitiesForDeviceId = device.deviceID },
+                        onVerify = { viewModel.updateFriendProfile(device.deviceID, it) },
+                        onTogglePause = { viewModel.toggleDevicePause(device.deviceID) }
                     )
                 }
             }

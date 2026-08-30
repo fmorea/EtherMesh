@@ -182,8 +182,8 @@
     <string name="log_syncthing_title">View EtherMesh Log</string>
     <string name="android_log_title">View Android Log</string>
     <string name="share_title">Share</string>
-    <string name="share_activity_title">Save to EtherMesh</string>
-    <string name="save_title">Save</string>
+    <string name="share_activity_title">Create link</string>
+    <string name="save_title">Create</string>
     <string name="cancel_title">Cancel</string>
     <string name="folder_title">Folder</string>
     <string name="file_name_template">New file %1$s</string>
@@ -209,15 +209,15 @@
         <item quantity="other">EtherMesh: Syncing (%1$d%%), %2$d devices online</item>
     </plurals>
     <plurals name="copy_success_partially">
-        <item quantity="one">%1$d file copied</item>
-        <item quantity="other">%1$d files copied</item>
+        <item quantity="one">%1$d link created</item>
+        <item quantity="other">%1$d links created</item>
     </plurals>
     <plurals name="copy_success">
-        <item quantity="one">%1$d file copied</item>
-        <item quantity="other">%1$d files copied</item>
+        <item quantity="one">%1$d link created</item>
+        <item quantity="other">%1$d links created</item>
     </plurals>
     <string name="copy_exception">Error during sharing</string>
-    <string name="copy_progress">Sharing files…</string>
+    <string name="copy_progress">Creating links…</string>
     <plurals name="file_name_title">
         <item quantity="one">File Name</item>
         <item quantity="other">Files List</item>

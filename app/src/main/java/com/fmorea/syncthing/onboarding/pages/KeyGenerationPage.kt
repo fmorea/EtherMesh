@@ -24,9 +24,10 @@ fun KeyGenerationPage(
     pageIndex: Int,
     requestTvFocus: Boolean,
     onBack: () -> Unit,
-    onFinishOnboarding: () -> Unit,
+    onContinue: () -> Unit,
 ) {
     val context = LocalContext.current
+    val isLastPage = pageIndex == uiState.pages.size - 1
 
     OnboardingScaffold(
         icon = OnboardingIcon.Vector(Icons.Outlined.Key),
@@ -38,8 +39,10 @@ fun KeyGenerationPage(
         nextLabel = stringResource(
             if (uiState.keyGenerationFailed) {
                 R.string.open_log
-            } else {
+            } else if (isLastPage) {
                 R.string.finish
+            } else {
+                R.string.cont
             }
         ),
         nextEnabled = uiState.keyGenerationFailed || uiState.hasConfig,
@@ -52,7 +55,7 @@ fun KeyGenerationPage(
                 context.startActivity(intent)
                 (context as? Activity)?.finish()
             } else if (uiState.hasConfig) {
-                onFinishOnboarding()
+                onContinue()
             }
         },
         action = {

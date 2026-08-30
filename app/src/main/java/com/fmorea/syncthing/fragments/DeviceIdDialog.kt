@@ -20,6 +20,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,6 +52,7 @@ fun DeviceIdDialog(
     qrCode: Bitmap,
     onCopy: () -> Unit,
     onShare: () -> Unit,
+    onShareLink: () -> Unit,
     isCurrentDevice: Boolean,
 ) {
     ApplicationTheme {
@@ -72,9 +74,9 @@ fun DeviceIdDialog(
             },
             text = {
                 if (isLandscape()) {
-                    LandscapeDialogContent(deviceId, qrCode, onCopy, onShare)
+                    LandscapeDialogContent(deviceId, qrCode, onCopy, onShare, onShareLink)
                 } else {
-                    PortraitDialogContent(deviceId, qrCode, onCopy, onShare)
+                    PortraitDialogContent(deviceId, qrCode, onCopy, onShare, onShareLink)
                 }
             },
             confirmButton = {
@@ -148,6 +150,7 @@ fun PortraitDialogContent(
     qrCode: Bitmap,
     onCopy: () -> Unit,
     onShare: () -> Unit,
+    onShareLink: () -> Unit,
 ) {
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp.dp
@@ -173,22 +176,29 @@ fun PortraitDialogContent(
             Text(deviceId, modifier = Modifier.padding(16.dp))
         }
         Spacer(Modifier.height(16.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FilledTonalButton(onCopy, Modifier.weight(1f)) {
-                Icon(
-                    imageVector = Icons.Outlined.ContentCopy,
-                    contentDescription = stringResource(R.string.action_copy)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.action_copy))
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                FilledTonalButton(onCopy, Modifier.weight(1f)) {
+                    Icon(
+                        imageVector = Icons.Outlined.ContentCopy,
+                        contentDescription = stringResource(R.string.action_copy)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.action_copy))
+                }
+                FilledTonalButton(onShare, Modifier.weight(1f)) {
+                    Icon(
+                        imageVector = Icons.Outlined.Share,
+                        contentDescription = stringResource(R.string.share_title)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("ID")
+                }
             }
-            FilledTonalButton(onShare, Modifier.weight(1f)) {
-                Icon(
-                    imageVector = Icons.Outlined.Share,
-                    contentDescription = stringResource(R.string.share_title)
-                )
+            Button(onShareLink, Modifier.fillMaxWidth()) {
+                Icon(Icons.Outlined.Share, null)
                 Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.share_title))
+                Text("Condividi Link EtherMesh")
             }
         }
     }
@@ -200,6 +210,7 @@ fun LandscapeDialogContent(
     qrCode: Bitmap,
     onCopy: () -> Unit,
     onShare: () -> Unit,
+    onShareLink: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth().heightIn(max = 250.dp)) {
         Surface(
@@ -222,22 +233,11 @@ fun LandscapeDialogContent(
                 Text(deviceId, modifier = Modifier.padding(16.dp))
             }
             Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                FilledTonalButton(onCopy, Modifier.weight(1f)) {
-                    Icon(
-                        imageVector = Icons.Outlined.ContentCopy,
-                        contentDescription = stringResource(R.string.action_copy)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.action_copy))
-                }
-                FilledTonalButton(onShare, Modifier.weight(1f)) {
-                    Icon(
-                        imageVector = Icons.Outlined.Share,
-                        contentDescription = stringResource(R.string.share_title)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.share_title))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                IconButton(onClick = onCopy) { Icon(Icons.Outlined.ContentCopy, null) }
+                IconButton(onClick = onShare) { Icon(Icons.Outlined.Share, null) }
+                Button(onShareLink, Modifier.weight(1f)) {
+                    Text("Condividi Link", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }

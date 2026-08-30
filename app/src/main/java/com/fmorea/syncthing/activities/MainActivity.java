@@ -134,14 +134,23 @@ public class MainActivity extends SyncthingActivity implements SyncthingService.
         LinkThingBridge.setContent(composeView, mLinkThingViewModel, "");
         setContentView(composeView);
 
-        Intent serviceIntent = new Intent(this, SyncthingService.class);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent);
-        } else {
-            startService(serviceIntent);
-        }
+        // Delay service startup to prioritize first UI frame
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            if (isFinishing()) return;
+            Intent serviceIntent = new Intent(this, SyncthingService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent);
+            } else {
+                startService(serviceIntent);
+            }
+        }, 500);
 
         onNewIntent(getIntent());
+        
+        if (getIntent().getData() != null && "linkthing".equals(getIntent().getData().getScheme())) {
+            mLinkThingViewModel.handleDeepLink(getIntent().getData());
+        }
+
         getOnBackPressedDispatcher().addCallback(this, mBackPressedCallback);
     }
     
@@ -150,6 +159,10 @@ public class MainActivity extends SyncthingActivity implements SyncthingService.
         setIntent(intent);
         mLastIntent = intent;
         super.onNewIntent(intent);
+        
+        if (intent.getData() != null && "linkthing".equals(intent.getData().getScheme())) {
+            mLinkThingViewModel.handleDeepLink(intent.getData());
+        }
         
         if (NfcAdapter.ACTION_NDEF_DISCOVERED.equals(intent.getAction())) {
             Tag tag;
@@ -186,6 +199,13 @@ public class MainActivity extends SyncthingActivity implements SyncthingService.
         }
     }
 
+    private boolean hasProfile() {
+        String myId = mPreferences.getString(Constants.PREF_LOCAL_DEVICE_ID, "");
+        if (myId.isEmpty()) return true; // Can't check if no ID yet, will be handled in onboarding
+        java.io.File rootDir = new java.io.File(getFilesDir(), Constants.LINKTHING_DIR_NAME);
+        return com.fmorea.syncthing.syncthing.UserProfile.Companion.exists(myId, rootDir);
+    }
+
     @Override
     public void onResume() {
         super.onResume();
@@ -195,7 +215,7 @@ public class MainActivity extends SyncthingActivity implements SyncthingService.
                     Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ? android.app.PendingIntent.FLAG_MUTABLE : 0);
             mNfcAdapter.enableForegroundDispatch(this, pendingIntent, null, null);
         }
-        if (!PermissionUtil.haveAllOnboardingPermissions(this) || !Constants.getConfigFile(this).exists()) {
+        if (!PermissionUtil.haveAllOnboardingPermissions(this) || !Constants.getConfigFile(this).exists() || !hasProfile()) {
             startActivity(new Intent(this, com.fmorea.syncthing.onboarding.OnboardingActivity.class));
             finish();
             return;

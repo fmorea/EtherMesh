@@ -131,11 +131,40 @@ class LinkThingViewModel(application: Application) : AndroidViewModel(applicatio
         data class DeviceDiscovered(val deviceId: String) : UiEvent()
     }
 
+    data class DeepLinkAction(val path: String, val params: Map<String, String>)
+    
+    private val _pendingDeepLink = MutableStateFlow<DeepLinkAction?>(null)
+    val pendingDeepLink = _pendingDeepLink.asStateFlow()
+
+    fun handleDeepLink(androidUri: android.net.Uri) {
+        if (androidUri.scheme != "linkthing") return
+        val path = androidUri.host ?: ""
+        val params = androidUri.queryParameterNames.associateWith { name ->
+            androidUri.getQueryParameter(name) ?: ""
+        }
+        _pendingDeepLink.value = DeepLinkAction(path, params)
+    }
+
+    fun onDeepLinkHandled() {
+        _pendingDeepLink.value = null
+    }
+
     init {
-        UserProfile.migrateLegacyProfiles(repository.rootDir)
-        _userProfile.value = UserProfile.load(prefsLocalDeviceId, prefsLocalDeviceId, repository.rootDir)
-        
-        initializeCryptoKeys()
+        viewModelScope.launch(Dispatchers.IO) {
+            UserProfile.migrateLegacyProfiles(repository.rootDir)
+            val loadedProfile = UserProfile.load(prefsLocalDeviceId, prefsLocalDeviceId, repository.rootDir)
+            _userProfile.value = loadedProfile
+            
+            initializeCryptoKeys()
+
+            // Periodic refresh for discovery and connection status
+            launch {
+                while (isActive) {
+                    refreshFriends()
+                    delay(30000) // Match the delay in Screen
+                }
+            }
+        }
 
         viewModelScope.launch {
             repository.profilesVersion.collect {
@@ -154,14 +183,6 @@ class LinkThingViewModel(application: Application) : AndroidViewModel(applicatio
                         }
                     }
                 }
-            }
-        }
-
-        // Periodic refresh for discovery and connection status
-        viewModelScope.launch {
-            while (isActive) {
-                refreshFriends()
-                delay(15000) 
             }
         }
     }

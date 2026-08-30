@@ -60,6 +60,7 @@ import androidx.compose.foundation.verticalScroll
 import android.os.Build
 import androidx.core.os.ConfigurationCompat
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 enum class LinkThingTab {
     CHAT, FILE_DRIVE, NETWORK, NETWORK_GRAPH, APPLICATIONS, CALENDAR
@@ -82,14 +83,14 @@ fun LinkThingScreen(
     viewModel: LinkThingViewModel,
     scannedDeviceId: String = ""
 ) {
-    val messages by viewModel.messages.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
-    val syncStatus by viewModel.syncStatus.collectAsState()
-    val localDevice by viewModel.localDevice.collectAsState()
-    val friends by viewModel.friends.collectAsState()
-    val userProfile by viewModel.userProfile.collectAsState()
-    val friendProfiles by viewModel.friendProfiles.collectAsState()
-    val isLocalUserBanned by viewModel.isLocalUserBanned.collectAsState()
+    val messages by viewModel.messages.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val syncStatus by viewModel.syncStatus.collectAsStateWithLifecycle()
+    val localDevice by viewModel.localDevice.collectAsStateWithLifecycle()
+    val friends by viewModel.friends.collectAsStateWithLifecycle()
+    val userProfile by viewModel.userProfile.collectAsStateWithLifecycle()
+    val friendProfiles by viewModel.friendProfiles.collectAsStateWithLifecycle()
+    val isLocalUserBanned by viewModel.isLocalUserBanned.collectAsStateWithLifecycle()
     
     if (isLocalUserBanned) {
         Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.errorContainer), contentAlignment = Alignment.Center) {
@@ -183,8 +184,62 @@ fun LinkThingScreen(
     var editContent by remember { mutableStateOf("") }
     
     var showAddFriendDialog by remember { mutableStateOf(false) }
+    var addFriendInitialId by remember { mutableStateOf(scannedDeviceId) }
     var editingProfileByDeviceId by remember { mutableStateOf<String?>(null) }
     var croppingImageFile by remember { mutableStateOf<File?>(null) }
+    
+    val pendingDeepLink by viewModel.pendingDeepLink.collectAsStateWithLifecycle()
+
+    LaunchedEffect(pendingDeepLink) {
+        val link = pendingDeepLink ?: return@LaunchedEffect
+        when (link.path) {
+            "chat" -> {
+                val id = link.params["id"]
+                if (id != null) {
+                    chatMode = LinkThingChatMode.PRIVATE
+                    selectedRecipientId = id
+                    currentTab = LinkThingTab.CHAT
+                }
+            }
+            "network" -> currentTab = LinkThingTab.NETWORK
+            "graph" -> currentTab = LinkThingTab.NETWORK_GRAPH
+            "drive" -> {
+                val path = link.params["path"]
+                if (path != null) {
+                    val rootDir = viewModel.getRootDir()
+                    val targetFile = File(rootDir, path)
+                    vaultTargetFile = targetFile
+                    vaultTargetCategory = null
+                } else {
+                    resetVaultTrigger++
+                }
+                currentTab = LinkThingTab.FILE_DRIVE
+            }
+            "calendar" -> currentTab = LinkThingTab.CALENDAR
+            "profile" -> {
+                val id = link.params["id"]
+                if (id != null) {
+                    editingProfileByDeviceId = id
+                }
+            }
+            "add-friend" -> {
+                val id = link.params["id"]
+                if (id != null) {
+                    addFriendInitialId = id
+                    showAddFriendDialog = true
+                    currentTab = LinkThingTab.NETWORK
+                }
+            }
+            "join-mesh" -> {
+                val id = link.params["id"]
+                if (id != null) {
+                    viewModel.addFriend(id)
+                    currentTab = LinkThingTab.NETWORK
+                }
+            }
+        }
+        viewModel.onDeepLinkHandled()
+    }
 
     if (croppingImageFile != null) {
         ImageCropper(
@@ -269,14 +324,15 @@ fun LinkThingScreen(
     LaunchedEffect(syncStatus) {
         if (syncStatus == "Attivo") {
             while (true) {
+                kotlinx.coroutines.delay(30000) // Increased delay to 30s to reduce background load
                 viewModel.refreshFriends()
-                kotlinx.coroutines.delay(10000)
             }
         }
     }
 
     LaunchedEffect(scannedDeviceId) {
         if (scannedDeviceId.isNotBlank()) {
+            addFriendInitialId = scannedDeviceId
             showAddFriendDialog = true
         }
     }
@@ -293,7 +349,7 @@ fun LinkThingScreen(
 
     if (showAddFriendDialog) {
         AddFriendDialog(
-            initialDeviceId = scannedDeviceId,
+            initialDeviceId = addFriendInitialId,
             onDismiss = { showAddFriendDialog = false },
             onAddFriend = { deviceId ->
                 viewModel.addFriend(deviceId)
@@ -848,6 +904,9 @@ fun LinkThingScreen(
             AnimatedContent(
                 targetState = currentTab,
                 transitionSpec = {
+                    if (!DevicePerformance.useHeavyAnimations) {
+                        return@AnimatedContent fadeIn() togetherWith fadeOut()
+                    }
                     val initialIndex = when (initialState) {
                         LinkThingTab.CHAT -> 0
                         LinkThingTab.FILE_DRIVE -> 1
@@ -950,10 +1009,24 @@ fun LinkThingScreen(
                                     }
                                 }
                             }
-                            LazyColumn(state = listState, reverseLayout = true, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                items(items = messagesToDisplay, key = { it.uniqueId }) { message ->
+                            LazyColumn(
+                                state = listState, 
+                                reverseLayout = true, 
+                                modifier = Modifier.fillMaxSize(), 
+                                contentPadding = PaddingValues(8.dp), 
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                items(
+                                    items = messagesToDisplay, 
+                                    key = { it.uniqueId },
+                                    contentType = { if (it.isAttachment) LinkThingContentTypes.ATTACHMENT else LinkThingContentTypes.MESSAGE }
+                                ) { message ->
                                     Column(modifier = Modifier.fillMaxWidth().animateItem()) {
-                                        if (message.dateHeader != null) { key(message.dateHeader) { DateDivider(message.dateHeader!!) } }
+                                        if (message.dateHeader != null) { 
+                                            key(message.dateHeader) { 
+                                                DateDivider(message.dateHeader!!) 
+                                            } 
+                                        }
                                         var showMessageMenu by remember { mutableStateOf(false) }
                                         val localIsSelectionMode = selectedIds.isNotEmpty()
                                         val isSelected = selectedIds.contains(message.uniqueId)
@@ -1021,7 +1094,37 @@ fun LinkThingScreen(
                                                         }
                                                     }
                                                     DropdownMenuItem(text = { Text("Copia Testo") }, onClick = { showMessageMenu = false; clipboardManager.setText(AnnotatedString(message.content)); android.widget.Toast.makeText(context, "Copiato", android.widget.Toast.LENGTH_SHORT).show() }, leadingIcon = { Icon(Icons.Default.ContentCopy, null) })
-                                                    DropdownMenuItem(text = { Text("Condividi Esternamente") }, onClick = { showMessageMenu = false; val sendIntent = Intent().apply { action = Intent.ACTION_SEND; if (message.isAttachment && message.file != null) { val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", message.file); putExtra(Intent.EXTRA_STREAM, uri); type = context.contentResolver.getType(uri) ?: "*/*"; addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) } else { putExtra(Intent.EXTRA_TEXT, message.content); type = "text/plain" } }; context.startActivity(Intent.createChooser(sendIntent, null)) }, leadingIcon = { Icon(Icons.Default.Share, null) })
+                                                    
+                                                    // Improved file resolution for links
+                                                    val fileForLink = message.file ?: run {
+                                                        if (message.isAttachment && message.fileName.isNotBlank()) {
+                                                            val root = viewModel.getRootDir()
+                                                            // Search recursively for the file by name if not in root
+                                                            root.walkTopDown().find { it.name == message.fileName }
+                                                        } else null
+                                                    }
+                                                    
+                                                    if (fileForLink != null) {
+                                                        DropdownMenuItem(
+                                                            text = { Text("Crea Link") },
+                                                            onClick = {
+                                                                showMessageMenu = false
+                                                                val rootDir = viewModel.getRootDir()
+                                                                val absoluteRoot = rootDir.absolutePath
+                                                                val absoluteFile = fileForLink.absolutePath
+                                                                val virtualPath = if (absoluteFile.startsWith(absoluteRoot)) {
+                                                                    absoluteFile.substring(absoluteRoot.length).replace(File.separator, "/")
+                                                                } else {
+                                                                    "/" + fileForLink.name
+                                                                }
+                                                                val link = "linkthing://drive?path=$virtualPath"
+                                                                clipboardManager.setText(AnnotatedString(link))
+                                                                android.widget.Toast.makeText(context, "Link copiato negli appunti", android.widget.Toast.LENGTH_SHORT).show()
+                                                            },
+                                                            leadingIcon = { Icon(Icons.Default.Link, null) }
+                                                        )
+                                                    }
+                                              DropdownMenuItem(text = { Text("Condividi Esternamente") }, onClick = { showMessageMenu = false; val sendIntent = Intent().apply { action = Intent.ACTION_SEND; if (message.isAttachment && message.file != null) { val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", message.file); putExtra(Intent.EXTRA_STREAM, uri); type = context.contentResolver.getType(uri) ?: "*/*"; addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) } else { putExtra(Intent.EXTRA_TEXT, message.content); type = "text/plain" } }; context.startActivity(Intent.createChooser(sendIntent, null)) }, leadingIcon = { Icon(Icons.Default.Share, null) })
                                                     if (!message.isAttachment) {
                                                         DropdownMenuItem(text = { Text("Modifica") }, onClick = { showMessageMenu = false; selectedMessage = message; editContent = message.content; showEditDialog = true }, leadingIcon = { Icon(Icons.Default.Edit, null) })
                                                     }
@@ -1734,13 +1837,6 @@ fun ApplicationsTabContent(
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = "Strumenti Decentralizzati",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 24.dp, top = 8.dp).align(Alignment.Start)
-        )
-
         val rowModifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
         
         Row(modifier = rowModifier, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1779,38 +1875,6 @@ fun ApplicationsTabContent(
                 modifier = Modifier.weight(1f),
                 onClick = onPlayChess
             )
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-        
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
-        ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.VerifiedUser, 
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = "Sicurezza EtherMesh",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Tutte le tue comunicazioni e i file nel Drive sono cifrati end-to-end e sincronizzati direttamente P2P tra i tuoi dispositivi e i tuoi amici.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
         }
     }
 }
