@@ -138,6 +138,7 @@ public class ChessView extends View {
         drawable.draw(canvas);
         return bitmap;
     }
+// Force save for disk synchronization
 
     private void initTools(Context context) {
         hintPaint.setColor(Color.argb(200, 255, 235, 59));
