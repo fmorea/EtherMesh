@@ -1,14 +1,9 @@
 package com.fmorea.syncthing.syncthing
 
-import android.widget.Toast
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
@@ -23,23 +18,25 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fmorea.syncthing.R
 import java.io.File
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
+import android.widget.Toast
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 
 data class FileMetadata(
     val timestamp: Long? = null,
@@ -49,49 +46,44 @@ data class FileMetadata(
     val introducedId: String? = null,
     val originalTimestamp: Long? = null,
     val originalSender: String? = null,
-    val type: String = "Sconosciuto",
+    val type: String,
     val profile: UserProfile? = null
 )
 
-/**
- * A Markdown and Code VisualTransformation to highlight syntax.
- */
 class MarkdownVisualTransformation(
-    private val boldColor: Color,
-    private val italicColor: Color,
-    private val codeColor: Color,
-    private val searchHighlightColor: Color = Color.Yellow,
-    private val searchQuery: String = "",
-    private val extension: String = ""
+    val boldColor: Color,
+    val italicColor: Color,
+    val codeColor: Color,
+    val searchHighlightColor: Color,
+    val searchQuery: String,
+    val extension: String
 ) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
-        val highlighted = if (extension in listOf("msg", "ack", "net", "info", "chess", "md", "txt", "markdown")) {
+        val highlighted = if (extension in listOf("msg", "ack", "mail", "md")) {
             highlightMarkdown(text.text)
-        } else {
+        } else if (extension in listOf("json", "xml", "html", "net")) {
             highlightCode(text.text, extension)
+        } else {
+            AnnotatedString(text.text)
         }
-        
-        val withSearch = if (searchQuery.isNotBlank()) {
+
+        // Apply search highlights
+        val finalResult = if (searchQuery.isNotBlank()) {
             buildAnnotatedString {
                 append(highlighted)
-                var start = 0
-                while (true) {
-                    val index = highlighted.text.indexOf(searchQuery, start, ignoreCase = true)
-                    if (index == -1) break
+                var index = highlighted.text.indexOf(searchQuery, ignoreCase = true)
+                while (index >= 0) {
                     addStyle(
-                        SpanStyle(background = searchHighlightColor.copy(alpha = 0.5f), color = Color.Black),
-                        index,
-                        index + searchQuery.length
+                        style = SpanStyle(background = searchHighlightColor),
+                        start = index,
+                        end = index + searchQuery.length
                     )
-                    start = index + searchQuery.length
+                    index = highlighted.text.indexOf(searchQuery, index + 1, ignoreCase = true)
                 }
             }
         } else highlighted
 
-        return TransformedText(
-            withSearch,
-            OffsetMapping.Identity
-        )
+        return TransformedText(finalResult, androidx.compose.ui.text.input.OffsetMapping.Identity)
     }
 
     private fun highlightMarkdown(content: String): AnnotatedString {
@@ -103,132 +95,83 @@ class MarkdownVisualTransformation(
                         val end = content.indexOf("**", i + 2)
                         if (end != -1) {
                             withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = boldColor)) {
-                                append(content.substring(i, end + 2))
+                                append(content.substring(i + 2, end))
                             }
                             i = end + 2
-                        } else {
-                            append(content[i]); i++
-                        }
+                        } else { append(content[i]); i++ }
                     }
-                    content.startsWith("*", i) -> {
-                        val end = content.indexOf("*", i + 1)
-                        if (end != -1 && end != i + 1) {
+                    content.startsWith("_", i) -> {
+                        val end = content.indexOf("_", i + 1)
+                        if (end != -1) {
                             withStyle(SpanStyle(fontStyle = FontStyle.Italic, color = italicColor)) {
-                                append(content.substring(i, end + 1))
+                                append(content.substring(i + 1, end))
                             }
                             i = end + 1
-                        } else {
-                            append(content[i]); i++
-                        }
+                        } else { append(content[i]); i++ }
                     }
                     content.startsWith("`", i) -> {
                         val end = content.indexOf("`", i + 1)
                         if (end != -1) {
-                            withStyle(SpanStyle(background = codeColor.copy(alpha = 0.1f), fontFamily = FontFamily.Monospace, color = codeColor)) {
-                                append(content.substring(i, end + 1))
+                            withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = codeColor.copy(alpha = 0.1f), color = codeColor)) {
+                                append(content.substring(i + 1, end))
                             }
                             i = end + 1
-                        } else {
-                            append(content[i]); i++
-                        }
+                        } else { append(content[i]); i++ }
                     }
-                    content.startsWith("#", i) -> {
-                        val end = content.indexOf("\n", i)
-                        val headerEnd = if (end != -1) end else content.length
-                        withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = boldColor, fontSize = 18.sp)) {
-                            append(content.substring(i, headerEnd))
-                        }
-                        i = headerEnd
-                    }
-                    else -> {
-                        append(content[i]); i++
-                    }
+                    else -> { append(content[i]); i++ }
                 }
             }
         }
     }
 
     private fun highlightCode(content: String, ext: String): AnnotatedString {
-        val keywordColor = Color(0xFF2196F3)
-        val stringColor = Color(0xFF4CAF50)
-        val commentColor = Color.Gray
-        val attrColor = Color(0xFF9C27B0)
-        val numberColor = Color(0xFFF44336)
-
         return buildAnnotatedString {
-            var i = 0
-            while (i < content.length) {
-                val char = content[i]
-                when {
-                    char == '\"' || char == '\'' -> {
-                        val quote = char
-                        val end = content.indexOf(quote, i + 1)
-                        if (end != -1) {
-                            withStyle(SpanStyle(color = stringColor)) {
-                                append(content.substring(i, end + 1))
-                            }
-                            i = end + 1
-                        } else { append(char); i++ }
-                    }
-                    content.startsWith("//", i) -> {
-                        val end = content.indexOf('\n', i)
-                        val comment = if (end != -1) content.substring(i, end) else content.substring(i)
-                        withStyle(SpanStyle(color = commentColor)) {
-                            append(comment)
-                        }
-                        i += comment.length
-                    }
-                    content.startsWith("/*", i) -> {
-                        val end = content.indexOf("*/", i + 2)
-                        val comment = if (end != -1) content.substring(i, end + 2) else content.substring(i)
-                        withStyle(SpanStyle(color = commentColor)) {
-                            append(comment)
-                        }
-                        i += comment.length
-                    }
-                    ext in listOf("xml", "html") && char == '<' -> {
-                        val end = content.indexOf('>', i + 1)
-                        if (end != -1) {
-                            withStyle(SpanStyle(color = keywordColor)) {
-                                append(content.substring(i, end + 1))
-                            }
-                            i = end + 1
-                        } else { append(char); i++ }
-                    }
-                    char.isDigit() -> {
-                        var j = i
-                        while (j < content.length && content[j].isDigit()) j++
-                        withStyle(SpanStyle(color = numberColor)) {
-                            append(content.substring(i, j))
-                        }
-                        i = j
-                    }
-                    char.isLetter() -> {
-                        var j = i
-                        while (j < content.length && (content[j].isLetterOrDigit() || content[j] == '_')) j++
-                        val word = content.substring(i, j)
-                        val keywords = listOf("val", "var", "fun", "class", "import", "package", "if", "else", "for", "while", "return", "true", "false", "null", "public", "private", "protected", "static", "void", "String", "int", "boolean")
-                        if (word in keywords) {
-                            withStyle(SpanStyle(color = keywordColor, fontWeight = FontWeight.Bold)) {
-                                append(word)
-                            }
-                        } else if (ext == "json" && i > 0 && content.getOrNull(i-1) == '\"') {
-                            val k = content.indexOf(':', j)
-                            if (k != -1 && content.substring(j, k).isBlank()) {
-                                withStyle(SpanStyle(color = attrColor)) {
-                                    append(word)
+            val lines = content.split("\n")
+            lines.forEachIndexed { index, line ->
+                when (ext) {
+                    "json" -> {
+                        var i = 0
+                        while (i < line.length) {
+                            val char = line[i]
+                            when {
+                                char == '"' -> {
+                                    val end = line.indexOf('"', i + 1)
+                                    if (end != -1) {
+                                        val isKey = line.substring(end + 1).trimStart().startsWith(":")
+                                        withStyle(SpanStyle(color = if (isKey) Color(0xFF2196F3) else Color(0xFF4CAF50))) {
+                                            append(line.substring(i, end + 1))
+                                        }
+                                        i = end + 1
+                                    } else { append(char); i++ }
                                 }
-                            } else append(word)
-                        } else {
-                            append(word)
+                                char.isDigit() -> {
+                                    withStyle(SpanStyle(color = Color(0xFFFF9800))) {
+                                        append(char)
+                                    }
+                                    i++
+                                }
+                                else -> { append(char); i++ }
+                            }
                         }
-                        i = j
                     }
-                    else -> {
-                        append(char)
-                        i++
+                    "xml", "html" -> {
+                        var i = 0
+                        while (i < line.length) {
+                            val char = line[i]
+                            if (char == '<') {
+                                val end = line.indexOf('>', i)
+                                if (end != -1) {
+                                    withStyle(SpanStyle(color = Color(0xFFE91E63))) {
+                                        append(line.substring(i, end + 1))
+                                    }
+                                    i = end + 1
+                                } else { append(char); i++ }
+                            } else { append(char); i++ }
+                        }
                     }
+                    else -> append(line)
                 }
+                if (index < lines.size - 1) append("\n")
             }
         }
     }
@@ -298,56 +241,16 @@ fun InternalTextEditor(
                 } else FileMetadata(type = context.getString(R.string.type_ack_unknown))
             }
             ext == "net" -> {
-                if (parts.size >= 2) {
-                    FileMetadata(
-                        introducerId = parts[0],
-                        introducedId = parts[1],
-                        type = context.getString(R.string.type_net)
-                    )
-                } else FileMetadata(type = context.getString(R.string.type_net_unknown))
-            }
-            ext == "chess" -> {
-                if (parts.size >= 2) {
-                    FileMetadata(
-                        timestamp = parts[0].toLongOrNull(),
-                        senderId = parts[1],
-                        type = context.getString(R.string.type_chess)
-                    )
-                } else FileMetadata(type = context.getString(R.string.type_chess))
-            }
-            ext == "mail" -> {
                 if (parts.size >= 3) {
                     FileMetadata(
                         timestamp = parts[0].toLongOrNull(),
-                        senderId = parts[1],
-                        receiverId = parts[2],
-                        type = context.getString(R.string.type_mail)
+                        introducerId = parts[1],
+                        introducedId = parts[2],
+                        type = "Discovery"
                     )
-                } else FileMetadata(type = context.getString(R.string.type_mail))
+                } else FileMetadata(type = "Discovery Unknown")
             }
-            ext == "info" -> {
-                val profile = try { UserProfile.loadFromFile(file) } catch (_: Exception) { null }
-                val partsInfo = file.name.removeSuffix(".INFO").split("_")
-                val deviceIdFromPath = partsInfo.getOrNull(0) ?: ""
-                val discloserIdFromPath = partsInfo.getOrNull(1) ?: ""
-                
-                FileMetadata(
-                    type = context.getString(R.string.metadata_user_profile),
-                    profile = profile?.copy(
-                        deviceId = profile.deviceId.ifBlank { deviceIdFromPath },
-                        discloserId = profile.discloserId.ifBlank { discloserIdFromPath }
-                    )
-                )
-            }
-            else -> {
-                if (parts.size >= 3) {
-                    FileMetadata(
-                        timestamp = parts[0].toLongOrNull(),
-                        senderId = parts[1],
-                        type = context.getString(R.string.type_attachment, ext)
-                    )
-                } else FileMetadata(type = context.getString(R.string.type_generic))
-            }
+            else -> FileMetadata(type = ext.uppercase())
         }
     }
 
@@ -361,6 +264,7 @@ fun InternalTextEditor(
             boldColor = boldColor,
             italicColor = italicColor,
             codeColor = codeColor,
+            searchHighlightColor = Color.Yellow.copy(alpha = 0.5f),
             searchQuery = searchQuery,
             extension = file.extension.lowercase()
         )
@@ -384,7 +288,6 @@ fun InternalTextEditor(
         if (!isLoading && !isPreviewMode) {
             Surface(tonalElevation = 4.dp, shadowElevation = 2.dp) {
                 Column {
-                    // Toolbar
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -393,15 +296,15 @@ fun InternalTextEditor(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = onDismiss) {
-                            Icon(Icons.Default.Close, "Close", modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.Close, "Close", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface)
                         }
 
                         IconButton(onClick = { /* Files switch logic */ }) {
-                            Icon(Icons.Default.FilterNone, "Files", modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.FilterNone, "Files", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface)
                         }
                         
                         Surface(
-                            color = MaterialTheme.colorScheme.primaryContainer,
+                            color = MaterialTheme.colorScheme.primary,
                             shape = RoundedCornerShape(4.dp),
                             modifier = Modifier.padding(horizontal = 4.dp)
                         ) {
@@ -409,9 +312,9 @@ fun InternalTextEditor(
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onPrimary)
                                 Spacer(Modifier.width(8.dp))
-                                Text("edit", style = MaterialTheme.typography.labelMedium)
+                                Text("edit", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimary)
                             }
                         }
                         
@@ -419,7 +322,7 @@ fun InternalTextEditor(
                             onSave(textValue.text)
                             Toast.makeText(context, R.string.toast_file_saved, Toast.LENGTH_SHORT).show()
                         }) {
-                            Icon(Icons.Default.Save, "Save", modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.Save, "Save", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface)
                         }
 
                         if (file.extension.lowercase() in listOf("msg", "ack") && onShowInChat != null) {
@@ -434,7 +337,7 @@ fun InternalTextEditor(
                                 )
                                 onShowInChat(msg)
                             }) {
-                                Icon(Icons.AutoMirrored.Filled.Chat, "Chat", modifier = Modifier.size(20.dp))
+                                Icon(Icons.AutoMirrored.Filled.Chat, "Chat", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface)
                             }
                         }
 
@@ -442,141 +345,104 @@ fun InternalTextEditor(
 
                         // Jump to Start/End
                         IconButton(onClick = { textValue = textValue.copy(selection = TextRange(0)) }) {
-                            Icon(Icons.Default.VerticalAlignTop, "Start", modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.VerticalAlignTop, "Start", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface)
                         }
                         IconButton(onClick = { textValue = textValue.copy(selection = TextRange(textValue.text.length)) }) {
-                            Icon(Icons.Default.VerticalAlignBottom, "End", modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.VerticalAlignBottom, "End", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface)
                         }
+                    }
 
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.background)
+                            .padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Start
+                    ) {
+                        IconButton(onClick = {
+                            val newText = "**${textValue.text.substring(textValue.selection.start, textValue.selection.end)}**"
+                            textValue = textValue.copy(
+                                text = textValue.text.replaceRange(textValue.selection.start, textValue.selection.end, newText),
+                                selection = TextRange(textValue.selection.start + 2, textValue.selection.start + 2 + (textValue.selection.end - textValue.selection.start))
+                            )
+                        }) {
+                            Icon(Icons.Default.FormatBold, "Bold", modifier = Modifier.size(18.dp))
+                        }
+                        IconButton(onClick = {
+                            val newText = "_${textValue.text.substring(textValue.selection.start, textValue.selection.end)}_"
+                            textValue = textValue.copy(
+                                text = textValue.text.replaceRange(textValue.selection.start, textValue.selection.end, newText),
+                                selection = TextRange(textValue.selection.start + 1, textValue.selection.start + 1 + (textValue.selection.end - textValue.selection.start))
+                            )
+                        }) {
+                            Icon(Icons.Default.FormatItalic, "Italic", modifier = Modifier.size(18.dp))
+                        }
+                        IconButton(onClick = {
+                            val newText = "`${textValue.text.substring(textValue.selection.start, textValue.selection.end)}`"
+                            textValue = textValue.copy(
+                                text = textValue.text.replaceRange(textValue.selection.start, textValue.selection.end, newText),
+                                selection = TextRange(textValue.selection.start + 1, textValue.selection.start + 1 + (textValue.selection.end - textValue.selection.start))
+                            )
+                        }) {
+                            Icon(Icons.Default.Code, "Code", modifier = Modifier.size(18.dp))
+                        }
+                        
                         VerticalDivider(modifier = Modifier.height(24.dp).padding(horizontal = 4.dp))
-
+                        
                         IconButton(onClick = {
                             if (undoStack.size > 1) {
                                 val current = undoStack.removeAt(undoStack.size - 1)
                                 redoStack.add(current)
-                                val previous = undoStack.last()
-                                textValue = textValue.copy(text = previous)
+                                textValue = TextFieldValue(undoStack.last())
                             }
                         }, enabled = undoStack.size > 1) {
-                            Icon(Icons.AutoMirrored.Filled.Undo, "Undo")
+                            Icon(Icons.AutoMirrored.Filled.Undo, "Undo", modifier = Modifier.size(18.dp))
                         }
                         IconButton(onClick = {
                             if (redoStack.isNotEmpty()) {
-                                val next = redoStack.removeAt(redoStack.size - 1)
-                                undoStack.add(next)
-                                textValue = textValue.copy(text = next)
+                                val target = redoStack.removeAt(redoStack.size - 1)
+                                undoStack.add(target)
+                                textValue = TextFieldValue(target)
                             }
                         }, enabled = redoStack.isNotEmpty()) {
-                            Icon(Icons.AutoMirrored.Filled.Redo, "Redo")
+                            Icon(Icons.AutoMirrored.Filled.Redo, "Redo", modifier = Modifier.size(18.dp))
                         }
-                    }
-                    
-                    // Filename Bar
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.05f))
-                            .padding(horizontal = 16.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "${file.name} | UTF-8",
-                            style = TextStyle(
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Medium
-                            )
-                        )
+                        
                         Spacer(Modifier.weight(1f))
                         
-                        var showEditMenu by remember { mutableStateOf(false) }
-                        Text(
-                            "MODIFICA", 
-                            modifier = Modifier.clickable { showEditMenu = true },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        
-                        DropdownMenu(expanded = showEditMenu, onDismissRequest = { showEditMenu = false }) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.action_metadata)) },
-                                onClick = {
-                                    showEditMenu = false
-                                    onMetadataToggle()
-                                },
-                                leadingIcon = { Icon(Icons.Default.Fingerprint, null) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.action_preview)) },
-                                onClick = {
-                                    showEditMenu = false
-                                    onPreviewModeChange(!isPreviewMode)
-                                },
-                                leadingIcon = { Icon(Icons.Default.Visibility, null) }
-                            )
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text("Cerca/Sostituisci") },
-                                onClick = {
-                                    showEditMenu = false
-                                    Toast.makeText(context, "Usa la barra di ricerca in alto", Toast.LENGTH_SHORT).show()
-                                },
-                                leadingIcon = { Icon(Icons.Default.Search, null) }
-                            )
+                        IconButton(onClick = { onMetadataToggle() }) {
+                            Icon(if (showMetadata) Icons.Default.ExpandLess else Icons.Default.ExpandMore, "Metadata", modifier = Modifier.size(18.dp))
                         }
                     }
-                    
-                    FormattingToolbar(
-                        textValue = textValue,
-                        onValueChange = { 
-                            pushUndo(it.text)
-                            textValue = it 
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
                 }
             }
-        }
-        
-        Column(modifier = Modifier.fillMaxSize()) {
+
             if (showMetadata) {
                 Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    color = MaterialTheme.colorScheme.background,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Fingerprint, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("${stringResource(R.string.metadata_interpretation)}: ${metadata.type}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = metadata.type,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        metadata.timestamp?.let { 
+                            MetadataRow(stringResource(R.string.metadata_creation_date), SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault()).format(Date(it)))
                         }
-                        
-                        val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy HH:mm:ss.SSS", Locale.getDefault()) }
-                        
-                        metadata.timestamp?.let {
-                            MetadataRow(stringResource(R.string.metadata_creation_date), dateFormat.format(Date(it)))
-                        }
-                        metadata.senderId?.let {
-                            MetadataRow(stringResource(R.string.metadata_sender_id), it)
-                        }
-                        metadata.receiverId?.let {
-                            MetadataRow(stringResource(R.string.metadata_receiver_id), it)
-                        }
-                        metadata.introducerId?.let {
-                            MetadataRow(stringResource(R.string.metadata_introducer_id), it)
-                        }
-                        metadata.introducedId?.let {
-                            MetadataRow(stringResource(R.string.metadata_introduced_node_id), it)
-                        }
-                        metadata.originalTimestamp?.let {
-                            MetadataRow(stringResource(R.string.metadata_original_message_ref), dateFormat.format(Date(it)))
-                        }
-                        metadata.originalSender?.let {
-                            MetadataRow(stringResource(R.string.metadata_original_author_ref), it)
-                        }
+                        metadata.senderId?.let { MetadataRow(stringResource(R.string.metadata_sender_id), it) }
+                        metadata.receiverId?.let { MetadataRow(stringResource(R.string.metadata_receiver_id), it) }
+                        metadata.introducerId?.let { MetadataRow(stringResource(R.string.metadata_introducer_id), it) }
+                        metadata.introducedId?.let { MetadataRow(stringResource(R.string.metadata_introduced_node_id), it) }
                         
                         metadata.profile?.let { p ->
+                            Spacer(Modifier.height(8.dp))
+                            HorizontalDivider(color = Color.Black.copy(alpha = 0.05f))
+                            Spacer(Modifier.height(8.dp))
                             MetadataRow(stringResource(R.string.profile_first_name), p.firstName.ifBlank { "-" })
                             MetadataRow(stringResource(R.string.profile_last_name), p.lastName.ifBlank { "-" })
                             MetadataRow(stringResource(R.string.profile_address), p.address.ifBlank { "-" })
@@ -588,19 +454,19 @@ fun InternalTextEditor(
                         }
                     }
                 }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+                HorizontalDivider(color = Color.Black.copy(alpha = 0.05f))
             }
 
             if (isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                 }
             } else {
                 if (isPreviewMode) {
                     Box(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
                         MarkdownText(
                             text = textValue.text,
-                            style = TextStyle(fontSize = 16.sp, lineHeight = 24.sp)
+                            style = TextStyle(fontSize = 16.sp, lineHeight = 24.sp, color = MaterialTheme.colorScheme.onBackground)
                         )
                     }
                 } else {
@@ -610,7 +476,7 @@ fun InternalTextEditor(
                     val lineHeightDp = with(density) { 20.sp.toDp() }
 
                     Surface(
-                        color = MaterialTheme.colorScheme.surface,
+                        color = MaterialTheme.colorScheme.background,
                         modifier = Modifier.fillMaxSize()
                     ) {
                         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -626,7 +492,7 @@ fun InternalTextEditor(
                                     modifier = Modifier
                                         .fillMaxHeight()
                                         .width(40.dp)
-                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
                                         .padding(top = 16.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
@@ -636,7 +502,7 @@ fun InternalTextEditor(
                                             style = TextStyle(
                                                 fontFamily = FontFamily.Monospace,
                                                 fontSize = 11.sp,
-                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                                                color = Color.Gray.copy(alpha = 0.6f)
                                             ),
                                             modifier = Modifier.height(lineHeightDp)
                                         )
@@ -645,7 +511,7 @@ fun InternalTextEditor(
 
                                 VerticalDivider(
                                     modifier = Modifier.fillMaxHeight(),
-                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
+                                    color = Color.Black.copy(alpha = 0.05f)
                                 )
 
                                 Box(modifier = Modifier.weight(1f).fillMaxHeight().horizontalScroll(rememberScrollState())) {
@@ -662,13 +528,10 @@ fun InternalTextEditor(
                                             fontFamily = FontFamily.Monospace,
                                             fontSize = 14.sp,
                                             lineHeight = 20.sp,
-                                            color = MaterialTheme.colorScheme.onSurface
+                                            color = MaterialTheme.colorScheme.onBackground
                                         ),
-                                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                                         visualTransformation = markdownTransformation,
-                                        decorationBox = { innerTextField ->
-                                            innerTextField()
-                                        }
+                                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary)
                                     )
                                     
                                     // Character and Line Count Overlay
@@ -676,14 +539,13 @@ fun InternalTextEditor(
                                         modifier = Modifier
                                             .align(Alignment.BottomEnd)
                                             .padding(16.dp),
-                                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.9f),
-                                        shape = RoundedCornerShape(8.dp),
-                                        tonalElevation = 2.dp
+                                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+                                        shape = RoundedCornerShape(8.dp)
                                     ) {
                                         Text(
                                             text = "Lines: $lineCount | Chars: ${textValue.text.length}",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            color = MaterialTheme.colorScheme.onSurface,
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                         )
                                     }
@@ -701,6 +563,15 @@ fun InternalTextEditor(
 fun MetadataRow(label: String, value: String) {
     Row(modifier = Modifier.padding(vertical = 2.dp)) {
         Text("$label: ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-        Text(value, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
+        Text(value, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onBackground)
     }
+}
+
+@Composable
+fun MarkdownText(text: String, style: TextStyle) {
+    // Basic markdown renderer for preview mode
+    Text(
+        text = text,
+        style = style
+    )
 }

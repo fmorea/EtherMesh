@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -155,6 +156,7 @@ fun PortraitDialogContent(
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp.dp
     val qrMaxHeight = minOf(screenHeight * 0.30f, 280.dp)
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     Column {
         Surface(
@@ -177,28 +179,30 @@ fun PortraitDialogContent(
         }
         Spacer(Modifier.height(16.dp))
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                FilledTonalButton(onCopy, Modifier.weight(1f)) {
-                    Icon(
-                        imageVector = Icons.Outlined.ContentCopy,
-                        contentDescription = stringResource(R.string.action_copy)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.action_copy))
-                }
-                FilledTonalButton(onShare, Modifier.weight(1f)) {
-                    Icon(
-                        imageVector = Icons.Outlined.Share,
-                        contentDescription = stringResource(R.string.share_title)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text("ID")
-                }
-            }
-            Button(onShareLink, Modifier.fillMaxWidth()) {
+            Button(
+                onClick = {
+                    val shareText = "EtherMesh: Scambia file e messaggi in modo sicuro e decentralizzato.\n\nAggiungimi con il mio ID:\n$deviceId\n\nlinkthing://add-friend?id=$deviceId"
+                    val sendIntent = android.content.Intent().apply {
+                        action = android.content.Intent.ACTION_SEND
+                        putExtra(android.content.Intent.EXTRA_TEXT, shareText)
+                        type = "text/plain"
+                    }
+                    context.startActivity(android.content.Intent.createChooser(sendIntent, "Condividi Invito EtherMesh"))
+                }, 
+                Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
                 Icon(Icons.Outlined.Share, null)
                 Spacer(Modifier.width(8.dp))
-                Text("Condividi Link EtherMesh")
+                Text("Condividi Invito Completo")
+            }
+            
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilledTonalButton(onClick = onCopy, Modifier.weight(1f)) {
+                    Icon(Icons.Outlined.ContentCopy, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Copia ID")
+                }
             }
         }
     }
@@ -212,6 +216,7 @@ fun LandscapeDialogContent(
     onShare: () -> Unit,
     onShareLink: () -> Unit,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Row(Modifier.fillMaxWidth().heightIn(max = 250.dp)) {
         Surface(
             shape = RoundedCornerShape(16.dp),
@@ -230,15 +235,30 @@ fun LandscapeDialogContent(
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
             ) {
-                Text(deviceId, modifier = Modifier.padding(16.dp))
+                Text(deviceId, modifier = Modifier.padding(16.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                IconButton(onClick = onCopy) { Icon(Icons.Outlined.ContentCopy, null) }
-                IconButton(onClick = onShare) { Icon(Icons.Outlined.Share, null) }
-                Button(onShareLink, Modifier.weight(1f)) {
-                    Text("Condividi Link", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
+            Button(
+                onClick = {
+                    val shareText = "EtherMesh: Scambia file e messaggi in modo sicuro e decentralizzato.\n\nAggiungimi con il mio ID:\n$deviceId\n\nlinkthing://add-friend?id=$deviceId"
+                    val sendIntent = android.content.Intent().apply {
+                        action = android.content.Intent.ACTION_SEND
+                        putExtra(android.content.Intent.EXTRA_TEXT, shareText)
+                        type = "text/plain"
+                    }
+                    context.startActivity(android.content.Intent.createChooser(sendIntent, "Condividi Invito EtherMesh"))
+                }, 
+                Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Outlined.Share, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Condividi Invito")
+            }
+            Spacer(Modifier.height(8.dp))
+            FilledTonalButton(onClick = onCopy, Modifier.fillMaxWidth()) {
+                Icon(Icons.Outlined.ContentCopy, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Copia ID")
             }
         }
     }

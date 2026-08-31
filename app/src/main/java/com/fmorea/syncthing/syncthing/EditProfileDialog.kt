@@ -48,6 +48,7 @@ fun EditProfileDialog(
     var address by remember(profile) { mutableStateOf(profile.address) }
     var gender by remember(profile) { mutableStateOf(profile.gender) }
     var height by remember(profile) { mutableStateOf(profile.height) }
+    var phoneNumber by remember(profile) { mutableStateOf(profile.phoneNumber ?: "") }
 
     var showQrCode by remember { mutableStateOf(false) }
 
@@ -155,6 +156,15 @@ fun EditProfileDialog(
                 TextField(value = gender, onValueChange = { if (isMe) gender = it }, label = { Text("Sesso") }, readOnly = !isMe, modifier = Modifier.fillMaxWidth())
                 Spacer(modifier = Modifier.height(8.dp))
                 TextField(value = height, onValueChange = { if (isMe) height = it }, label = { Text("Altezza") }, readOnly = !isMe, modifier = Modifier.fillMaxWidth())
+                Spacer(modifier = Modifier.height(8.dp))
+                TextField(
+                    value = phoneNumber, 
+                    onValueChange = { if (isMe) phoneNumber = it }, 
+                    label = { Text("Telefono (opzionale)") }, 
+                    placeholder = { Text("+39...") },
+                    readOnly = !isMe, 
+                    modifier = Modifier.fillMaxWidth()
+                )
                 
                 if (!isMe) {
                     Spacer(modifier = Modifier.height(16.dp))
@@ -176,6 +186,7 @@ fun EditProfileDialog(
                             lastName = lastName.trim(),
                             country = country.trim(),
                             address = address.trim(),
+                            phoneNumber = phoneNumber.trim().ifBlank { null },
                             gender = gender.trim(),
                             height = height.trim()
                         ))

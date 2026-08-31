@@ -11,6 +11,7 @@ data class UserProfile(
     val lastName: String = "",
     val country: String = "",
     val address: String = "",
+    val phoneNumber: String? = null,
     val gender: String = "",
     val height: String = "",
     val photoPath: String? = null,

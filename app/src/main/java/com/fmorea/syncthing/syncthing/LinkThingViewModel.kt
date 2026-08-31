@@ -200,6 +200,12 @@ class LinkThingViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun getRootDir(): File = repository.rootDir
 
+    var vaultViewMode: String
+        get() = prefs?.getString(Constants.PREF_VAULT_VIEW_MODE, "LIST") ?: "LIST"
+        set(value) {
+            prefs?.edit()?.putString(Constants.PREF_VAULT_VIEW_MODE, value)?.apply()
+        }
+
     fun addCalendarEvent(event: CalendarEvent) {
         viewModelScope.launch(Dispatchers.IO) {
             event.toFile(repository.rootDir)

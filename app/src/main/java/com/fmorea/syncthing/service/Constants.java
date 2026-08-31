@@ -117,6 +117,7 @@ public class Constants {
     public static final String PREF_APP_START_COUNTER           = "app_start_counter";
     public static final String PREF_DH_PRIVATE_KEY             = "dh_private_key";
     public static final String PREF_DH_PUBLIC_KEY              = "dh_public_key";
+    public static final String PREF_VAULT_VIEW_MODE           = "vault_view_mode";
 
     /**
      * Cached device stats.

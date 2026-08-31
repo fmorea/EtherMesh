@@ -2,6 +2,8 @@ package com.fmorea.syncthing.syncthing
 
 import android.graphics.BitmapFactory
 import android.util.Log
+import androidx.compose.ui.graphics.toArgb
+import java.util.Objects
 import android.util.LruCache
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
@@ -77,56 +79,62 @@ val imageCacheShared = object : LruCache<String, android.graphics.Bitmap>(
     }
 }
 
-/**
- * WYSIWYG-like Markdown component that renders the text with formatting
- * but hides the symbols.
- */
-@Composable
-fun MarkdownText(
-    text: String,
-    modifier: Modifier = Modifier,
-    style: TextStyle = LocalTextStyle.current
-) {
-    val boldColor = MaterialTheme.colorScheme.primary
-    val italicColor = MaterialTheme.colorScheme.secondary
-    val codeColor = MaterialTheme.colorScheme.surfaceVariant
+object MarkdownParser {
+    private val cache = LruCache<Int, AnnotatedString>(100)
 
-    val annotatedString = remember(text, boldColor, italicColor, codeColor) {
-        buildAnnotatedString {
+    fun parse(
+        text: String, 
+        boldColor: Color, 
+        italicColor: Color, 
+        codeColor: Color,
+        showSymbols: Boolean = true
+    ): AnnotatedString {
+        if (text.isEmpty()) return buildAnnotatedString { }
+        
+        val cacheKey = Objects.hash(text, boldColor.toArgb(), italicColor.toArgb(), codeColor.toArgb(), showSymbols)
+        cache.get(cacheKey)?.let { return it }
+
+        val result = buildAnnotatedString {
             var i = 0
-            while (i < text.length) {
+            val len = text.length
+            val symbolStyle = SpanStyle(color = Color.LightGray.copy(alpha = 0.5f))
+            
+            while (i < len) {
                 when {
-                    // Bold **text**
                     text.startsWith("**", i) -> {
                         val end = text.indexOf("**", i + 2)
                         if (end != -1) {
+                            if (showSymbols) withStyle(symbolStyle) { append("**") }
                             withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = boldColor)) {
                                 append(text.substring(i + 2, end))
                             }
+                            if (showSymbols) withStyle(symbolStyle) { append("**") }
                             i = end + 2
                         } else {
                             append(text[i]); i++
                         }
                     }
-                    // Italic *text*
                     text.startsWith("*", i) -> {
                         val end = text.indexOf("*", i + 1)
                         if (end != -1 && end != i + 1) {
+                            if (showSymbols) withStyle(symbolStyle) { append("*") }
                             withStyle(SpanStyle(fontStyle = FontStyle.Italic, color = italicColor)) {
                                 append(text.substring(i + 1, end))
                             }
+                            if (showSymbols) withStyle(symbolStyle) { append("*") }
                             i = end + 1
                         } else {
                             append(text[i]); i++
                         }
                     }
-                    // Code `text`
                     text.startsWith("`", i) -> {
                         val end = text.indexOf("`", i + 1)
                         if (end != -1) {
+                            if (showSymbols) withStyle(symbolStyle) { append("`") }
                             withStyle(SpanStyle(background = codeColor.copy(alpha = 0.2f), fontFamily = FontFamily.Monospace)) {
                                 append(text.substring(i + 1, end))
                             }
+                            if (showSymbols) withStyle(symbolStyle) { append("`") }
                             i = end + 1
                         } else {
                             append(text[i]); i++
@@ -138,6 +146,24 @@ fun MarkdownText(
                 }
             }
         }
+        cache.put(cacheKey, result)
+        return result
+    }
+}
+
+@Composable
+fun MarkdownText(
+    text: String,
+    modifier: Modifier = Modifier,
+    style: TextStyle = LocalTextStyle.current,
+    showSymbols: Boolean = false // Default to false for chat messages
+) {
+    val boldColor = MaterialTheme.colorScheme.primary
+    val italicColor = MaterialTheme.colorScheme.secondary
+    val codeColor = MaterialTheme.colorScheme.surfaceVariant
+
+    val annotatedString = remember(text, boldColor, italicColor, codeColor, showSymbols) {
+        MarkdownParser.parse(text, boldColor, italicColor, codeColor, showSymbols)
     }
     Text(text = annotatedString, modifier = modifier, style = style)
 }
@@ -235,25 +261,27 @@ fun Avatar(deviceId: String, profile: UserProfile? = null, size: Int = 32, onCli
     Surface(
         modifier = Modifier.size(size.dp).clickable(onClick = onClick),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.secondary.copy(alpha = if (DevicePerformance.useTranslucency) 0.2f else 1.0f)
+        color = Color(0xFFF0F0F0), // Standard neutral background
+        border = BorderStroke(0.5.dp, Color.LightGray)
     ) {
         Box(contentAlignment = Alignment.Center) {
             if (photo != null) {
                 AsyncImageAvatar(file = photo)
             } else {
                 if (size > 40) {
+                    val iconSize = (size * 0.55).dp
                     Icon(
                         Icons.Default.Person, 
                         null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size((size * 0.6).dp)
+                        tint = Color.Gray,
+                        modifier = Modifier.size(iconSize)
                     )
                 } else {
                     Text(
                         text = initial,
-                        style = MaterialTheme.typography.labelMedium,
+                        style = if (size > 30) MaterialTheme.typography.titleMedium else MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.secondary
+                        color = Color.DarkGray
                     )
                 }
             }

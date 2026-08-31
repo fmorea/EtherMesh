@@ -33,12 +33,14 @@ fun ProfileSetupPage(
     
     var firstName by remember { mutableStateOf("") }
     var lastName by remember { mutableStateOf("") }
+    var phoneNumber by remember { mutableStateOf("") }
 
     LaunchedEffect(myId, rootDir) {
         if (myId.isNotBlank()) {
             val profile = UserProfile.load(myId, myId, rootDir)
             firstName = profile.firstName
             lastName = profile.lastName
+            phoneNumber = profile.phoneNumber ?: ""
         }
     }
 
@@ -57,6 +59,7 @@ fun ProfileSetupPage(
                 val newProfile = currentProfile.copy(
                     firstName = firstName,
                     lastName = lastName,
+                    phoneNumber = phoneNumber.ifBlank { null },
                     discloserId = myId
                 )
                 UserProfile.save(newProfile, myId, rootDir)
@@ -67,7 +70,8 @@ fun ProfileSetupPage(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = 16.dp)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 OutlinedTextField(
@@ -84,6 +88,15 @@ fun ProfileSetupPage(
                     label = { Text("Cognome") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = phoneNumber,
+                    onValueChange = { phoneNumber = it },
+                    label = { Text("Telefono (opzionale)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    placeholder = { Text("+39...") }
                 )
                 
                 Text(

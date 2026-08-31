@@ -22,6 +22,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -486,6 +489,7 @@ fun LinkThingScreen(
     }
 
     Scaffold(
+        containerColor = Color.White,
         topBar = {
             if (isSelectionMode) {
                 TopAppBar(
@@ -804,22 +808,50 @@ fun LinkThingScreen(
                                                 IconButton(onClick = { filePickerLauncher.launch("*/*") }) {
                                                     Icon(Icons.Default.Add, contentDescription = "Allega", tint = MaterialTheme.colorScheme.primary)
                                                 }
-                                                TextField(
-                                                    value = inputText,
-                                                    onValueChange = { inputText = it },
-                                                    modifier = Modifier.weight(1f),
-                                                    placeholder = { Text("Scrivi un messaggio...") },
-                                                    maxLines = 6,
-                                                    colors = TextFieldDefaults.colors(
-                                                        focusedContainerColor = Color.Transparent,
-                                                        unfocusedContainerColor = Color.Transparent,
-                                                        focusedIndicatorColor = Color.Transparent,
-                                                        unfocusedIndicatorColor = Color.Transparent,
-                                                        disabledIndicatorColor = Color.Transparent,
-                                                        errorIndicatorColor = Color.Transparent
-                                                    ),
-                                                    textStyle = MaterialTheme.typography.bodyLarge
-                                                )
+                                                val renderedText = remember(inputText.text) {
+                                                    MarkdownParser.parse(
+                                                        inputText.text,
+                                                        boldColor = Color(0xFF0078D7),
+                                                        italicColor = Color(0xFF0099CC),
+                                                        codeColor = Color.LightGray,
+                                                        showSymbols = true
+                                                    )
+                                                }
+
+                                                Box(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .padding(horizontal = 4.dp, vertical = 8.dp)
+                                                        .heightIn(max = 120.dp)
+                                                ) {
+                                                    if (inputText.text.isEmpty()) {
+                                                        Text(
+                                                            "Scrivi un messaggio...", 
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                                            style = MaterialTheme.typography.bodyLarge
+                                                        )
+                                                    }
+                                                    
+                                                    // High-performance container for synchronized layers
+                                                    Box(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                                                        Text(
+                                                            text = renderedText,
+                                                            style = MaterialTheme.typography.bodyLarge
+                                                        )
+                                                        
+                                                        BasicTextField(
+                                                            value = inputText,
+                                                            onValueChange = { 
+                                                                if (it.text != inputText.text || it.selection != inputText.selection) {
+                                                                    inputText = it 
+                                                                }
+                                                            },
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.Transparent),
+                                                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary)
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -835,7 +867,6 @@ fun LinkThingScreen(
                                                 }
                                                 inputText = TextFieldValue("")
                                                 replyingTo = null
-                                                selectedRecipientId = null
                                                 focusManager.clearFocus()
                                             }
                                         },
@@ -898,253 +929,224 @@ fun LinkThingScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                .background(MaterialTheme.colorScheme.background)
                 .pointerInput(Unit) { detectTapGestures(onTap = { focusManager.clearFocus() }) }
         ) {
-            AnimatedContent(
-                targetState = currentTab,
-                transitionSpec = {
-                    if (!DevicePerformance.useHeavyAnimations) {
-                        return@AnimatedContent fadeIn() togetherWith fadeOut()
-                    }
-                    val initialIndex = when (initialState) {
-                        LinkThingTab.CHAT -> 0
-                        LinkThingTab.FILE_DRIVE -> 1
-                        LinkThingTab.NETWORK, LinkThingTab.NETWORK_GRAPH -> 2
-                        LinkThingTab.APPLICATIONS -> 3
-                        LinkThingTab.CALENDAR -> 4
-                    }
-                    val targetIndex = when (targetState) {
-                        LinkThingTab.CHAT -> 0
-                        LinkThingTab.FILE_DRIVE -> 1
-                        LinkThingTab.NETWORK, LinkThingTab.NETWORK_GRAPH -> 2
-                        LinkThingTab.APPLICATIONS -> 3
-                        LinkThingTab.CALENDAR -> 4
-                    }
-                    
-                    val animationSpec = tween<Float>(durationMillis = 300, easing = androidx.compose.animation.core.FastOutSlowInEasing)
-                    val slideSpec = tween<androidx.compose.ui.unit.IntOffset>(durationMillis = 300, easing = androidx.compose.animation.core.FastOutSlowInEasing)
-
-                    if (targetIndex > initialIndex) {
-                        (slideInHorizontally(animationSpec = slideSpec) { width -> width } + fadeIn(animationSpec = animationSpec))
-                            .togetherWith(slideOutHorizontally(animationSpec = slideSpec) { width -> -width } + fadeOut(animationSpec = animationSpec))
-                    } else if (targetIndex < initialIndex) {
-                        (slideInHorizontally(animationSpec = slideSpec) { width -> -width } + fadeIn(animationSpec = animationSpec))
-                            .togetherWith(slideOutHorizontally(animationSpec = slideSpec) { width -> width } + fadeOut(animationSpec = animationSpec))
-                    } else {
-                        fadeIn(animationSpec = animationSpec).togetherWith(fadeOut(animationSpec = animationSpec))
-                    }
-                },
-                label = "TabTransition"
-            ) { targetTab ->
-                when (targetTab) {
-                    LinkThingTab.CHAT -> {
-                        when {
-                            chatMode == LinkThingChatMode.HUB -> {
-                                ChatHub(
-                                    broadcastLastMsg = broadcastLastMsg,
-                                    privateConversations = privateConversations,
-                                    onOpenBroadcast = { chatMode = LinkThingChatMode.BROADCAST },
-                                    onOpenPrivate = { 
-                                        chatMode = LinkThingChatMode.PRIVATE
-                                        selectedRecipientId = it 
-                                    }
-                                )
-                            }
-                            chatMode == LinkThingChatMode.PRIVATE && selectedRecipientId == null -> {
-                                // Private Chat List (Selection)
-                                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                                    item {
-                                        SectionHeader(text = "Seleziona un amico")
-                                    }
-                                    items(friends) { friend ->
-                                        val profile = friendProfiles[friend.deviceID]
-                                        ListItem(
-                                            headlineContent = { Text(profile?.getDisplayName() ?: friend.getDisplayName()) },
-                                            supportingContent = { Text(friend.deviceID.take(16) + "...") },
-                                            leadingContent = { Avatar(deviceId = friend.deviceID, profile = profile) },
-                                            modifier = Modifier.clickable { selectedRecipientId = friend.deviceID },
-                                            trailingContent = {
-                                                if (profile?.publicKey == null) {
-                                                    Icon(Icons.Default.LockOpen, contentDescription = "Chiave mancante", tint = MaterialTheme.colorScheme.error)
-                                                } else {
-                                                    Icon(Icons.Default.Lock, contentDescription = "Cifrato", tint = MaterialTheme.colorScheme.primary)
-                                                }
+            val targetTab = currentTab
+            when (targetTab) {
+                LinkThingTab.CHAT -> {
+                    when {
+                        chatMode == LinkThingChatMode.HUB -> {
+                            ChatHub(
+                                broadcastLastMsg = broadcastLastMsg,
+                                privateConversations = privateConversations,
+                                onOpenBroadcast = { chatMode = LinkThingChatMode.BROADCAST },
+                                onOpenPrivate = { 
+                                    chatMode = LinkThingChatMode.PRIVATE
+                                    selectedRecipientId = it 
+                                }
+                            )
+                        }
+                        chatMode == LinkThingChatMode.PRIVATE && selectedRecipientId == null -> {
+                            // Private Chat List (Selection)
+                            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                item {
+                                    SectionHeader(text = "Seleziona un amico")
+                                }
+                                items(friends) { friend ->
+                                    val profile = friendProfiles[friend.deviceID]
+                                    ListItem(
+                                        headlineContent = { Text(profile?.getDisplayName() ?: friend.getDisplayName()) },
+                                        supportingContent = { Text(friend.deviceID.take(16) + "...") },
+                                        leadingContent = { Avatar(deviceId = friend.deviceID, profile = profile) },
+                                        modifier = Modifier.clickable { selectedRecipientId = friend.deviceID },
+                                        trailingContent = {
+                                            if (profile?.publicKey == null) {
+                                                Icon(Icons.Default.LockOpen, contentDescription = "Chiave mancante", tint = MaterialTheme.colorScheme.error)
+                                            } else {
+                                                Icon(Icons.Default.Lock, contentDescription = "Cifrato", tint = MaterialTheme.colorScheme.primary)
                                             }
-                                        )
-                                    }
+                                        }
+                                    )
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(horizontal = 16.dp),
+                                        thickness = 0.5.dp,
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                    )
                                 }
                             }
-                            else -> {
-                            // Main Chat (Broadcast or specific Private)
-                            val messagesToDisplay = filteredMessages
-                            if (messagesToDisplay.isEmpty()) {
-                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Icon(Icons.Default.ChatBubbleOutline, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                        }
+                        else -> {
+                        // Main Chat (Broadcast or specific Private)
+                        val messagesToDisplay = filteredMessages
+                        if (messagesToDisplay.isEmpty()) {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(Icons.Default.ChatBubbleOutline, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text(
+                                        if (chatMode == LinkThingChatMode.PRIVATE) "Nessun messaggio privato" else "Nessun messaggio", 
+                                        style = MaterialTheme.typography.bodyLarge, 
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                    if (chatMode == LinkThingChatMode.PRIVATE && selectedRecipientId != null && friendProfiles[selectedRecipientId]?.publicKey == null) {
                                         Spacer(modifier = Modifier.height(16.dp))
+                                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                        Spacer(modifier = Modifier.height(8.dp))
                                         Text(
-                                            if (chatMode == LinkThingChatMode.PRIVATE) "Nessun messaggio privato" else "Nessun messaggio", 
-                                            style = MaterialTheme.typography.bodyLarge, 
-                                            color = MaterialTheme.colorScheme.outline
+                                            "Scambio chiavi di cifratura in corso...", 
+                                            style = MaterialTheme.typography.bodySmall, 
+                                            color = MaterialTheme.colorScheme.primary,
+                                            textAlign = TextAlign.Center
                                         )
-                                        if (chatMode == LinkThingChatMode.PRIVATE && selectedRecipientId != null && friendProfiles[selectedRecipientId]?.publicKey == null) {
-                                            Spacer(modifier = Modifier.height(16.dp))
-                                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            Text(
-                                                "Scambio chiavi di cifratura in corso...", 
-                                                style = MaterialTheme.typography.bodySmall, 
-                                                color = MaterialTheme.colorScheme.primary,
-                                                textAlign = TextAlign.Center
-                                            )
-                                            Text(
-                                                "Il messaggio verrà inviato non appena il destinatario sarà online per confermare l'identità.", 
-                                                style = MaterialTheme.typography.labelSmall, 
-                                                color = MaterialTheme.colorScheme.outline,
-                                                textAlign = TextAlign.Center,
-                                                modifier = Modifier.padding(horizontal = 32.dp)
-                                            )
-                                        }
+                                        Text(
+                                            "Il messaggio verrà inviato non appena il destinatario sarà online per confermare l'identità.", 
+                                            style = MaterialTheme.typography.labelSmall, 
+                                            color = MaterialTheme.colorScheme.outline,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.padding(horizontal = 32.dp)
+                                        )
                                     }
                                 }
                             }
-                            LazyColumn(
-                                state = listState, 
-                                reverseLayout = true, 
-                                modifier = Modifier.fillMaxSize(), 
-                                contentPadding = PaddingValues(8.dp), 
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                items(
-                                    items = messagesToDisplay, 
-                                    key = { it.uniqueId },
-                                    contentType = { if (it.isAttachment) LinkThingContentTypes.ATTACHMENT else LinkThingContentTypes.MESSAGE }
-                                ) { message ->
-                                    Column(modifier = Modifier.fillMaxWidth().animateItem()) {
-                                        if (message.dateHeader != null) { 
-                                            key(message.dateHeader) { 
-                                                DateDivider(message.dateHeader!!) 
-                                            } 
-                                        }
-                                        var showMessageMenu by remember { mutableStateOf(false) }
-                                        val localIsSelectionMode = selectedIds.isNotEmpty()
-                                        val isSelected = selectedIds.contains(message.uniqueId)
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth().background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent).padding(vertical = 2.dp, horizontal = 4.dp),
-                                            horizontalArrangement = if (message.isLocal) Arrangement.End else Arrangement.Start,
-                                            verticalAlignment = Alignment.Bottom
-                                        ) {
-                                            if (!message.isLocal) {
-                                                Avatar(deviceId = message.deviceId, profile = friendProfiles[message.deviceId], onClick = { if (localIsSelectionMode) { selectedIds = if (isSelected) selectedIds - message.uniqueId else selectedIds + message.uniqueId } else { 
-                                                    chatMode = LinkThingChatMode.PRIVATE
-                                                    selectedRecipientId = message.deviceId 
-                                                } })
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                            }
-                                            Box(modifier = Modifier.weight(1f, fill = false).pointerInput(localIsSelectionMode, isSelected) {
-                                                detectTapGestures(onTap = { if (localIsSelectionMode) { selectedIds = if (isSelected) selectedIds - message.uniqueId else selectedIds + message.uniqueId } else { replyingTo = message } }, onLongPress = { if (!localIsSelectionMode) { showMessageMenu = true } else { selectedIds = if (isSelected) selectedIds - message.uniqueId else selectedIds + message.uniqueId } })
-                                            }) {
-                                                val senderProfile = if (message.isLocal) userProfile else friendProfiles[message.deviceId]
-                                                MessageBubble(
-                                                    message = message, 
-                                                    deviceNames = deviceNames, 
-                                                    profile = senderProfile, 
-                                                    allMessages = messages,
-                                                    onOpenCalendar = { currentTab = LinkThingTab.CALENDAR }
-                                                )
-                                                DropdownMenu(expanded = showMessageMenu, onDismissRequest = { showMessageMenu = false }) {
-                                                    DropdownMenuItem(
-                                                        text = { Text("Seleziona") },
-                                                        onClick = { 
-                                                            showMessageMenu = false
-                                                            selectedIds = selectedIds + message.uniqueId 
-                                                        },
-                                                        leadingIcon = { Icon(Icons.Default.CheckCircle, null) }
-                                                    )
-                                                    DropdownMenuItem(
-                                                        text = { Text("Vedi Profilo") },
-                                                        onClick = { 
-                                                            showMessageMenu = false
-                                                            editingProfileByDeviceId = message.deviceId 
-                                                        },
-                                                        leadingIcon = { Icon(Icons.Default.AccountCircle, null) }
-                                                    )
-                                                    if (!message.isLocal && !message.isMail) {
-                                                        DropdownMenuItem(
-                                                            text = { Text("Risposta Privata") },
-                                                            onClick = { 
-                                                                showMessageMenu = false
-                                                                chatMode = LinkThingChatMode.PRIVATE
-                                                                selectedRecipientId = message.deviceId 
-                                                            },
-                                                            leadingIcon = { Icon(Icons.Default.Lock, null) }
-                                                        )
-                                                    }
-                                                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                                                    if (message.file != null) {
-                                                        DropdownMenuItem(text = { Text("Vedi nel Drive") }, onClick = { showMessageMenu = false; vaultTargetFile = message.file; currentTab = LinkThingTab.FILE_DRIVE }, leadingIcon = { Icon(Icons.Default.Folder, null) })
-                                                    }
-                                                    if (message.isAttachment && message.file != null) {
-                                                        val ext = message.file.extension.lowercase()
-                                                        if (ext == "chess") {
-                                                            DropdownMenuItem(text = { Text("Apri scacchi") }, onClick = { showMessageMenu = false; val intent = Intent(context, com.fmorea.syncthing.chess.ChessActivity::class.java).apply { action = Intent.ACTION_VIEW; val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", message.file); data = uri; addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }; context.startActivity(intent) }, leadingIcon = { Icon(Icons.Default.Extension, null) })
-                                                        } else {
-                                                            DropdownMenuItem(text = { Text("Apri file") }, onClick = { showMessageMenu = false; FileUtils.openFile(context, message.file.absolutePath) }, leadingIcon = { Icon(Icons.Default.FileOpen, null) })
-                                                        }
-                                                    }
-                                                    DropdownMenuItem(text = { Text("Copia Testo") }, onClick = { showMessageMenu = false; clipboardManager.setText(AnnotatedString(message.content)); android.widget.Toast.makeText(context, "Copiato", android.widget.Toast.LENGTH_SHORT).show() }, leadingIcon = { Icon(Icons.Default.ContentCopy, null) })
-                                                    
-                                                    // Improved file resolution for links
-                                                    val fileForLink = message.file ?: run {
-                                                        if (message.isAttachment && message.fileName.isNotBlank()) {
-                                                            val root = viewModel.getRootDir()
-                                                            // Search recursively for the file by name if not in root
-                                                            root.walkTopDown().find { it.name == message.fileName }
-                                                        } else null
-                                                    }
-                                                    
-                                                    if (fileForLink != null) {
-                                                        DropdownMenuItem(
-                                                            text = { Text("Crea Link") },
-                                                            onClick = {
-                                                                showMessageMenu = false
-                                                                val rootDir = viewModel.getRootDir()
-                                                                val absoluteRoot = rootDir.absolutePath
-                                                                val absoluteFile = fileForLink.absolutePath
-                                                                val virtualPath = if (absoluteFile.startsWith(absoluteRoot)) {
-                                                                    absoluteFile.substring(absoluteRoot.length).replace(File.separator, "/")
-                                                                } else {
-                                                                    "/" + fileForLink.name
-                                                                }
-                                                                val link = "linkthing://drive?path=$virtualPath"
-                                                                clipboardManager.setText(AnnotatedString(link))
-                                                                android.widget.Toast.makeText(context, "Link copiato negli appunti", android.widget.Toast.LENGTH_SHORT).show()
-                                                            },
-                                                            leadingIcon = { Icon(Icons.Default.Link, null) }
-                                                        )
-                                                    }
-                                              DropdownMenuItem(text = { Text("Condividi Esternamente") }, onClick = { showMessageMenu = false; val sendIntent = Intent().apply { action = Intent.ACTION_SEND; if (message.isAttachment && message.file != null) { val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", message.file); putExtra(Intent.EXTRA_STREAM, uri); type = context.contentResolver.getType(uri) ?: "*/*"; addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) } else { putExtra(Intent.EXTRA_TEXT, message.content); type = "text/plain" } }; context.startActivity(Intent.createChooser(sendIntent, null)) }, leadingIcon = { Icon(Icons.Default.Share, null) })
-                                                    if (!message.isAttachment) {
-                                                        DropdownMenuItem(text = { Text("Modifica") }, onClick = { showMessageMenu = false; selectedMessage = message; editContent = message.content; showEditDialog = true }, leadingIcon = { Icon(Icons.Default.Edit, null) })
-                                                    }
-                                                    DropdownMenuItem(text = { Text("Info") }, onClick = { showMessageInfo = message }, leadingIcon = { Icon(Icons.Default.Info, null) })
-                                                    DropdownMenuItem(text = { Text("Elimina") }, onClick = { showMessageMenu = false; viewModel.deleteMessage(message) }, leadingIcon = { Icon(Icons.Default.Delete, null) }, colors = MenuDefaults.itemColors(textColor = MaterialTheme.colorScheme.error, leadingIconColor = MaterialTheme.colorScheme.error))
-                                                }
-                                            }
-                                            if (message.isLocal) {
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Avatar(deviceId = message.deviceId, profile = userProfile, onClick = { if (localIsSelectionMode) { selectedIds = if (isSelected) selectedIds - message.uniqueId else selectedIds + message.uniqueId } else { editingProfileByDeviceId = message.deviceId } })
-                                            }
-                                        }
-
+                        }
+                        LazyColumn(
+                            state = listState, 
+                            reverseLayout = true, 
+                            modifier = Modifier.fillMaxSize(), 
+                            contentPadding = PaddingValues(8.dp), 
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(
+                                items = messagesToDisplay, 
+                                key = { it.uniqueId },
+                                contentType = { if (it.isAttachment) LinkThingContentTypes.ATTACHMENT else LinkThingContentTypes.MESSAGE }
+                            ) { message ->
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    if (message.dateHeader != null) { 
+                                        key(message.dateHeader) { 
+                                            DateDivider(message.dateHeader!!) 
+                                        } 
                                     }
+                                    var showMessageMenu by remember { mutableStateOf(false) }
+                                    val localIsSelectionMode = selectedIds.isNotEmpty()
+                                    val isSelected = selectedIds.contains(message.uniqueId)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent).padding(vertical = 2.dp, horizontal = 4.dp),
+                                        horizontalArrangement = if (message.isLocal) Arrangement.End else Arrangement.Start,
+                                        verticalAlignment = Alignment.Bottom
+                                    ) {
+                                        if (!message.isLocal) {
+                                            Avatar(deviceId = message.deviceId, profile = friendProfiles[message.deviceId], onClick = { if (localIsSelectionMode) { selectedIds = if (isSelected) selectedIds - message.uniqueId else selectedIds + message.uniqueId } else { 
+                                                chatMode = LinkThingChatMode.PRIVATE
+                                                selectedRecipientId = message.deviceId 
+                                            } })
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                        }
+                                        Box(modifier = Modifier.weight(1f, fill = false).pointerInput(localIsSelectionMode, isSelected) {
+                                            detectTapGestures(onTap = { if (localIsSelectionMode) { selectedIds = if (isSelected) selectedIds - message.uniqueId else selectedIds + message.uniqueId } else { replyingTo = message } }, onLongPress = { if (!localIsSelectionMode) { showMessageMenu = true } else { selectedIds = if (isSelected) selectedIds - message.uniqueId else selectedIds + message.uniqueId } })
+                                        }) {
+                                            val senderProfile = if (message.isLocal) userProfile else friendProfiles[message.deviceId]
+                                            MessageBubble(
+                                                message = message, 
+                                                deviceNames = deviceNames, 
+                                                profile = senderProfile, 
+                                                allMessages = messages,
+                                                onOpenCalendar = { currentTab = LinkThingTab.CALENDAR }
+                                            )
+                                            DropdownMenu(expanded = showMessageMenu, onDismissRequest = { showMessageMenu = false }) {
+                                                DropdownMenuItem(
+                                                    text = { Text("Seleziona") },
+                                                    onClick = { 
+                                                        showMessageMenu = false
+                                                        selectedIds = selectedIds + message.uniqueId 
+                                                    },
+                                                    leadingIcon = { Icon(Icons.Default.CheckCircle, null) }
+                                                )
+                                                DropdownMenuItem(
+                                                    text = { Text("Vedi Profilo") },
+                                                    onClick = { 
+                                                        showMessageMenu = false
+                                                        editingProfileByDeviceId = message.deviceId 
+                                                    },
+                                                    leadingIcon = { Icon(Icons.Default.AccountCircle, null) }
+                                                )
+                                                if (!message.isLocal && !message.isMail) {
+                                                    DropdownMenuItem(
+                                                        text = { Text("Risposta Privata") },
+                                                        onClick = { 
+                                                            showMessageMenu = false
+                                                            chatMode = LinkThingChatMode.PRIVATE
+                                                            selectedRecipientId = message.deviceId 
+                                                        },
+                                                        leadingIcon = { Icon(Icons.Default.Lock, null) }
+                                                    )
+                                                }
+                                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                                                if (message.file != null) {
+                                                    DropdownMenuItem(text = { Text("Vedi nel Drive") }, onClick = { showMessageMenu = false; vaultTargetFile = message.file; currentTab = LinkThingTab.FILE_DRIVE }, leadingIcon = { Icon(Icons.Default.Folder, null) })
+                                                }
+                                                if (message.isAttachment && message.file != null) {
+                                                    val ext = message.file.extension.lowercase()
+                                                    if (ext == "chess") {
+                                                        DropdownMenuItem(text = { Text("Apri scacchi") }, onClick = { showMessageMenu = false; val intent = Intent(context, com.fmorea.syncthing.chess.ChessActivity::class.java).apply { action = Intent.ACTION_VIEW; val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", message.file); data = uri; addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }; context.startActivity(intent) }, leadingIcon = { Icon(Icons.Default.Extension, null) })
+                                                    } else {
+                                                        DropdownMenuItem(text = { Text("Apri file") }, onClick = { showMessageMenu = false; FileUtils.openFile(context, message.file.absolutePath) }, leadingIcon = { Icon(Icons.Default.FileOpen, null) })
+                                                    }
+                                                }
+                                                DropdownMenuItem(text = { Text("Copia Testo") }, onClick = { showMessageMenu = false; clipboardManager.setText(AnnotatedString(message.content)); android.widget.Toast.makeText(context, "Copiato", android.widget.Toast.LENGTH_SHORT).show() }, leadingIcon = { Icon(Icons.Default.ContentCopy, null) })
+                                                
+                                                // Improved file resolution for links
+                                                val fileForLink = message.file ?: run {
+                                                    if (message.isAttachment && message.fileName.isNotBlank()) {
+                                                        val root = viewModel.getRootDir()
+                                                        // Search recursively for the file by name if not in root
+                                                        root.walkTopDown().find { it.name == message.fileName }
+                                                    } else null
+                                                }
+                                                
+                                                if (fileForLink != null) {
+                                                    DropdownMenuItem(
+                                                        text = { Text("Crea Link") },
+                                                        onClick = {
+                                                            showMessageMenu = false
+                                                            val rootDir = viewModel.getRootDir()
+                                                            val absoluteRoot = rootDir.absolutePath
+                                                            val absoluteFile = fileForLink.absolutePath
+                                                            val virtualPath = if (absoluteFile.startsWith(absoluteRoot)) {
+                                                                absoluteFile.substring(absoluteRoot.length).replace(File.separator, "/")
+                                                            } else {
+                                                                "/" + fileForLink.name
+                                                            }
+                                                            val link = "linkthing://drive?path=$virtualPath"
+                                                            clipboardManager.setText(AnnotatedString(link))
+                                                            android.widget.Toast.makeText(context, "Link copiato negli appunti", android.widget.Toast.LENGTH_SHORT).show()
+                                                        },
+                                                        leadingIcon = { Icon(Icons.Default.Link, null) }
+                                                    )
+                                                }
+                                          DropdownMenuItem(text = { Text("Condividi Esternamente") }, onClick = { showMessageMenu = false; val sendIntent = Intent().apply { action = Intent.ACTION_SEND; if (message.isAttachment && message.file != null) { val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", message.file); putExtra(Intent.EXTRA_STREAM, uri); type = context.contentResolver.getType(uri) ?: "*/*"; addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) } else { putExtra(Intent.EXTRA_TEXT, message.content); type = "text/plain" } }; context.startActivity(Intent.createChooser(sendIntent, null)) }, leadingIcon = { Icon(Icons.Default.Share, null) })
+                                                if (!message.isAttachment) {
+                                                    DropdownMenuItem(text = { Text("Modifica") }, onClick = { showMessageMenu = false; selectedMessage = message; editContent = message.content; showEditDialog = true }, leadingIcon = { Icon(Icons.Default.Edit, null) })
+                                                }
+                                                DropdownMenuItem(text = { Text("Info") }, onClick = { showMessageInfo = message }, leadingIcon = { Icon(Icons.Default.Info, null) })
+                                                DropdownMenuItem(text = { Text("Elimina") }, onClick = { showMessageMenu = false; viewModel.deleteMessage(message) }, leadingIcon = { Icon(Icons.Default.Delete, null) }, colors = MenuDefaults.itemColors(textColor = MaterialTheme.colorScheme.error, leadingIconColor = MaterialTheme.colorScheme.error))
+                                            }
+                                        }
+                                        if (message.isLocal) {
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Avatar(deviceId = message.deviceId, profile = userProfile, onClick = { if (localIsSelectionMode) { selectedIds = if (isSelected) selectedIds - message.uniqueId else selectedIds + message.uniqueId } else { editingProfileByDeviceId = message.deviceId } })
+                                        }
+                                    }
+
                                 }
                             }
                         }
                     }
                 }
-                LinkThingTab.FILE_DRIVE -> FileVaultScreen(
+            }
+            LinkThingTab.FILE_DRIVE -> {
+                    FileVaultScreen(
                         viewModel = viewModel, 
                         initialFile = vaultTargetFile, 
                         initialCategory = vaultTargetCategory,
@@ -1156,41 +1158,41 @@ fun LinkThingScreen(
                             vaultTargetCategory = null 
                         }
                     )
-                    LinkThingTab.NETWORK -> NetworkView(viewModel = viewModel, onEditMyProfile = { editingProfileByDeviceId = localDevice?.deviceID }, onEditFriendProfile = { editingProfileByDeviceId = it }, onShowGraph = { currentTab = LinkThingTab.NETWORK_GRAPH })
-                    LinkThingTab.NETWORK_GRAPH -> NetworkGraphView(viewModel = viewModel, onNodeClick = { editingProfileByDeviceId = it })
-                    LinkThingTab.APPLICATIONS -> {
-                        val labelRubrica = stringResource(R.string.category_profiles)
-                        val labelNetwork = stringResource(R.string.category_network)
-                        ApplicationsTabContent(
-                            viewModel = viewModel,
-                            onPlayChess = {
-                                val gameFile = viewModel.shareChessGame()
-                                if (gameFile != null) {
-                                    val intent = Intent(context, com.fmorea.syncthing.chess.ChessActivity::class.java).apply {
-                                        action = Intent.ACTION_VIEW
-                                        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", gameFile)
-                                        data = uri
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    }
-                                    context.startActivity(intent)
+                }
+                LinkThingTab.NETWORK -> NetworkView(viewModel = viewModel, onEditMyProfile = { editingProfileByDeviceId = localDevice?.deviceID }, onEditFriendProfile = { editingProfileByDeviceId = it }, onShowGraph = { currentTab = LinkThingTab.NETWORK_GRAPH })
+                LinkThingTab.NETWORK_GRAPH -> NetworkGraphView(viewModel = viewModel, onNodeClick = { editingProfileByDeviceId = it })
+                LinkThingTab.APPLICATIONS -> {
+                    val labelRubrica = stringResource(R.string.category_profiles)
+                    val labelNetwork = stringResource(R.string.category_network)
+                    ApplicationsTabContent(
+                        viewModel = viewModel,
+                        onPlayChess = {
+                            val gameFile = viewModel.shareChessGame()
+                            if (gameFile != null) {
+                                val intent = Intent(context, com.fmorea.syncthing.chess.ChessActivity::class.java).apply {
+                                    action = Intent.ACTION_VIEW
+                                    val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", gameFile)
+                                    data = uri
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
-                            },
-                            onOpenRubrica = {
-                                vaultTargetCategory = labelRubrica
-                                currentTab = LinkThingTab.FILE_DRIVE
-                            },
-                            onShowGraph = {
-                                vaultTargetCategory = labelNetwork
-                                currentTab = LinkThingTab.FILE_DRIVE
-                            },
-                            onOpenCalendar = {
-                                currentTab = LinkThingTab.CALENDAR
+                                context.startActivity(intent)
                             }
-                        )
-                    }
-                    LinkThingTab.CALENDAR -> {
-                        CalendarView(viewModel = viewModel, onBack = { currentTab = LinkThingTab.APPLICATIONS })
-                    }
+                        },
+                        onOpenRubrica = {
+                            vaultTargetCategory = labelRubrica
+                            currentTab = LinkThingTab.FILE_DRIVE
+                        },
+                        onShowGraph = {
+                            vaultTargetCategory = labelNetwork
+                            currentTab = LinkThingTab.FILE_DRIVE
+                        },
+                        onOpenCalendar = {
+                            currentTab = LinkThingTab.CALENDAR
+                        }
+                    )
+                }
+                LinkThingTab.CALENDAR -> {
+                    CalendarView(viewModel = viewModel, onBack = { currentTab = LinkThingTab.APPLICATIONS })
                 }
             }
         }
@@ -2388,8 +2390,12 @@ fun ChatHub(
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                     )
                 }
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    thickness = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                )
             }
         }
     }
 }
-
